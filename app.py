@@ -5,7 +5,6 @@ from trading.live_trader import start_live_trading
 from data_tools.downloader import download_menu
 from backtesting.backtester import backtest_menu
 
-
 def main_menu():
 
     while True:

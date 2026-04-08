@@ -5,7 +5,6 @@ import time
 from utils import clear_screen, pause
 from progress import show_progress
 
-
 def download_menu():
 
     clear_screen()

@@ -1,9 +1,6 @@
 import time
 
-
-def show_progress(current,
-                  total,
-                  start_time):
+def show_progress(current, total, start_time):
 
     percent = (current / total) * 100
 
@@ -17,7 +14,4 @@ def show_progress(current,
 
         eta = 0
 
-    print(
-        f"\rProgress: {percent:.2f}% | ETA: {eta:.1f}s",
-        end=""
-    )
+    print(f"\rProgress: {percent:.2f}% | ETA: {eta:.1f}s", end="")

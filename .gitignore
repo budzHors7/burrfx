@@ -1,0 +1,8 @@
+logs/
+results/
+data/
+
+.vent/
+__pycache__/
+*/__pycache__/
+*.pyc

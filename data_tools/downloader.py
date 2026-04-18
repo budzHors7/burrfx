@@ -2,12 +2,14 @@ import MetaTrader5 as mt5
 import pandas as pd
 import time
 
+from logo import show_logo
 from utils import clear_screen, pause
-from progress import show_progress
+from .progress import show_progress
 
 def download_menu():
 
     clear_screen()
+    show_logo()
 
     print("DOWNLOAD HISTORY DATA")
     print("=====================\n")

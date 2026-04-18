@@ -1,0 +1,21 @@
+Starting project at C:\Users\Anda Hanise\Desktop\Projects\BurrFx\burrfx
+Using src/app as the root directory for Expo Router.
+React Compiler enabled
+Starting Metro Bundler
+
+warning: Bundler cache is empty, rebuilding (this may take a minute)
+Waiting on http://localhost:8081
+Logs for your project will appear below.
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Android node_modules\expo-router\entry.js ▓▓░░░░░░░░░░░░░░ 16.0% ( 6/20)
+Android node_modules\expo-router\entry.js ▓▓░░░░░░░░░░░░░░ 16.0% ( 95/275)
+Android node_modules\expo-router\entry.js ▓▓▓▓░░░░░░░░░░░░ 29.2% (252/474)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓░░░░░░░░░░ 41.2% (444/692)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 64.6% (605/753)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 70.4% (763/920)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 74.5% ( 883/1023)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 85.8% (1056/1162)
+Android node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1310/1310)
+Android Bundled 32042ms node_modules\expo-router\entry.js (1310 modules)
+Android node_modules\expo-router\entry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+Android Bundled 115ms node_modules\expo-router\entry.js (1 module)

@@ -1,32 +1,20 @@
-import MetaTrader5 as mt5
+# Store daily stats safely
+daily_stats = {
+    "profit": 0.0,
+    "loss": 0.0
+}
 
-from datetime import datetime
 
-daily_profit = 0
-daily_loss = 0
+def update_profit(value):
+    """Update daily profit/loss tracking"""
 
-
-def update_profit(profit):
-
-    global daily_profit
-    global daily_loss
-
-    if profit > 0:
-
-        daily_profit += profit
-
+    if value > 0:
+        daily_stats["profit"] += value
     else:
+        daily_stats["loss"] += value
 
-        daily_loss += profit
 
+def get_stats():
+    """Return profit/loss stats"""
 
-def get_account_info():
-
-    acc = mt5.account_info()
-
-    return {
-
-        "balance": acc.balance,
-        "equity": acc.equity
-
-    }
+    return daily_stats

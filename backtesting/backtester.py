@@ -1,9 +1,10 @@
 import os
 import pandas as pd
 
+from logo import show_logo
 from utils import clear_screen, pause
 
-from backtesting.chart_exporter import save_equity_chart
+from .chart_exporter import save_equity_chart
 
 
 def list_data_files():
@@ -22,6 +23,7 @@ def list_data_files():
 def backtest_menu():
 
     clear_screen()
+    show_logo()
 
     print("BACKTEST MENU")
     print("=============\n")

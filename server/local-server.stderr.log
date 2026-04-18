@@ -1,0 +1,22 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\Anda Hanise\\Desktop\\Projects\\BurrFx\\server', 'C:\\Users\\Anda Hanise\\Desktop\\Projects\\BurrFx\\trading']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [4700] using WatchFiles
+INFO:     Started server process [16624]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'server\smoke_test.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [16624]
+INFO:     Started server process [22396]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'server\smoke_test.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [22396]
+INFO:     Started server process [19652]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.

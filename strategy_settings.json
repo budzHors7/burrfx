@@ -1,0 +1,14 @@
+{
+  "ma_crossover": {
+    "enabled": true
+  },
+  "trendline_price_action": {
+    "enabled": true
+  },
+  "smc_liquidity_sweep": {
+    "enabled": true
+  },
+  "high_impact_news": {
+    "enabled": true
+  }
+}

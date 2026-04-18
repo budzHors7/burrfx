@@ -1,52 +1,22 @@
 # BurrFx Server
 
-This folder is the server-first workspace for exposing the existing BurrFx trading engine to a future Expo mobile app.
+This folder contains the self-hosted API that connects the existing BurrFx trading engine to the mobile app.
 
-The current terminal app stays in place:
+Important design rule:
 
-- `app.py` remains the interactive terminal entrypoint.
-- Existing shared trading logic remains in `trading/`, `config.py`, and related modules.
-- The new API will reuse that logic instead of replacing it.
+- `app.py` stays untouched as the terminal entrypoint
+- the API reuses shared logic from `trading/`
+- the MT5 terminal still runs on the same Windows machine as the API
 
-## Why This Is Feasible
+## What The Server Does
 
-The MetaTrader 5 Python integration supports:
+The server opens and manages one MT5 session for the current process, then exposes account state and bot controls over HTTP.
 
-- initializing a local MT5 terminal with `login`, `password`, and `server`
-- reading current account data
-- reading open positions
+Implemented routes:
 
-That matches the first mobile app scope:
-
-1. Auth screen
-2. Dashboard screen
-3. Trades screen
-
-## Recommended V1 Shape
-
-Start with a self-hosted Windows Server deployment:
-
-- Windows Server host
-- Installed MetaTrader 5 terminal on the same machine
-- Python API process
-- Later: Expo mobile app consuming this API
-
-For the first version, design around one active MT5 account session per API worker. The MT5 Python package operates against the connected terminal session, so multi-account support should come after the single-account workflow is stable.
-
-## Planned Endpoints
-
-- `POST /api/v1/auth/login`
-- `POST /api/v1/auth/logout`
-- `GET /api/v1/auth/session`
-- `GET /api/v1/account/overview`
-- `GET /api/v1/trades/open`
-- `GET /api/v1/bot/status`
-- `POST /api/v1/bot/start`
-- `POST /api/v1/bot/stop`
+- `GET /`
 - `GET /api/v1/health`
-
-Implemented now:
-
+- `GET /api/v1/health/plan`
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/session`
@@ -56,31 +26,40 @@ Implemented now:
 - `POST /api/v1/bot/start`
 - `POST /api/v1/bot/stop`
 
-## Shared Code Strategy
+Current runtime guardrails:
 
-We will keep the terminal workflow and add the API beside it.
+- login and logout are blocked while the bot is running
+- bot control uses a stop event instead of keyboard polling
+- the terminal menu flow is preserved
 
-Phase 1:
+## Prerequisites
 
-- add the hosted API scaffold
-- keep terminal trading unchanged
-- avoid breaking `app.py`
+- Windows machine
+- Python 3.x
+- MetaTrader 5 installed locally
+- valid MT5 account credentials for real login tests
 
-Phase 2:
+## Environment
 
-- extract reusable runtime pieces from `trading/live_trader.py`
-- let both the terminal app and API call the same shared runner
-- replace keyboard-only stop behavior with a stop event that works for both CLI and server control
+Copy the example file before running:
 
-Current guardrails:
+```powershell
+Copy-Item server\.env.example server\.env
+```
 
-- terminal menu usage still calls `start_live_trading()` with the default behavior
-- API bot runs with `interactive=False`, `initialize_mt5=False`, and `shutdown_mt5=False`
-- API login/logout is blocked while the bot thread is active so the MT5 session is not interrupted mid-run
+Main settings:
 
-## Local Run
+- `BURRFX_API_HOST`
+- `BURRFX_API_PORT`
+- `BURRFX_MT5_TERMINAL_PATH`
+- `BURRFX_MT5_TIMEOUT_MS`
+- `BURRFX_ALLOWED_ORIGINS`
 
-Run commands from the repository root:
+The server loads `server\.env` automatically on startup.
+
+## Start Locally
+
+Run these commands from the repository root:
 
 ```powershell
 python -m venv .venv
@@ -90,54 +69,92 @@ Copy-Item server\.env.example server\.env
 python server\run_local.py
 ```
 
-Open:
-
-- `http://localhost:8000/`
-- `http://localhost:8000/docs`
-
-Quick verification:
-
-```powershell
-python server\smoke_test.py
-```
-
 Windows shortcut:
 
 ```powershell
 .\server\start-local.ps1
 ```
 
-Local testing notes:
+Local URLs:
 
-- `server\.env` is now loaded automatically on startup.
-- Health, docs, and session routes can be tested locally even before MT5 login succeeds.
-- To test `auth/login`, `account/overview`, `trades/open`, and bot start/stop locally, MetaTrader 5 must be installed on the same Windows machine and `BURRFX_MT5_TERMINAL_PATH` must point to the real `terminal64.exe`.
+- `http://localhost:8000/`
+- `http://localhost:8000/docs`
+- `http://localhost:8000/api/v1/health`
 
-## Windows Hosting Direction
+## Smoke Test
 
-Recommended first hosting path:
+You can verify that the API process is alive before testing MT5 login:
 
-1. Install MetaTrader 5 terminal on the Windows Server machine.
-2. Run the API with `uvicorn`.
-3. Use a Windows service wrapper such as NSSM later for persistence.
-4. Put HTTPS in front of the API before exposing it outside the local network.
+```powershell
+.venv\Scripts\Activate.ps1
+python server\smoke_test.py
+```
 
-## MT5 Timeout
+The smoke test checks:
 
-The server uses `BURRFX_MT5_TIMEOUT_MS` to stop login requests from hanging too long.
+- `/`
+- `/api/v1/health`
+- `/api/v1/health/plan`
 
-- default: `15000`
-- applies to MT5 initialize and login calls
+## Test The MT5 Login Locally
 
-## Next Build Order
+After the server is running and `BURRFX_MT5_TERMINAL_PATH` points to the real `terminal64.exe`, use PowerShell to test login:
 
-1. Confirm local API scaffold runs.
-2. Add MT5 login endpoint using account number, password, and server.
-3. Add account overview and open-trades endpoints.
-4. Add bot start, stop, and status endpoints.
-5. Test the API manually before starting the Expo app.
+```powershell
+$body = @{
+  account_number = 12345678
+  password = "your-password"
+  server = "Broker-Demo"
+} | ConvertTo-Json
 
-Current status:
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://localhost:8000/api/v1/auth/login" `
+  -ContentType "application/json" `
+  -Body $body
+```
 
-- steps 1 through 5 are complete for the backend API
-- next focus is mobile auth and the two Expo tabs
+Then test the protected routes:
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/account/overview"
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/trades/open"
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/bot/status"
+```
+
+Start and stop the bot:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/v1/bot/start"
+Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/v1/bot/stop"
+```
+
+## Local Testing Notes
+
+- Health and docs endpoints work even before MT5 login succeeds.
+- `auth/login`, `account/overview`, `trades/open`, and bot control require MT5 on the same machine.
+- The current server process is designed around one active MT5 account session at a time.
+- For mobile testing from an emulator or phone, use a reachable IP instead of `localhost`.
+
+Recommended local values:
+
+- Android emulator on the same machine: `http://10.0.2.2:8000`
+- another device on the same LAN: `http://<windows-lan-ip>:8000`
+
+## Hosting Direction
+
+The first hosting target is self-hosted Windows Server.
+
+Recommended shape:
+
+1. Install MetaTrader 5 on the server.
+2. Copy the BurrFx project to the server.
+3. Create `server\.env` with the correct MT5 terminal path.
+4. Run the API with `python server\run_local.py` or a production `uvicorn` command.
+5. Put HTTPS and access control in front of the API before exposing it externally.
+
+## Known Limits
+
+- MT5 connectivity depends on the desktop terminal and local IPC working correctly.
+- Session state is process-local, not multi-user auth.
+- This is Windows-first because the MT5 terminal must be present where the API runs.

@@ -1,56 +1,111 @@
-# Welcome to your Expo app 👋
+# BurrFx Mobile App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+This is the Expo mobile client for BurrFx. It connects to the self-hosted BurrFx API, which then logs into MetaTrader 5 on the Windows machine.
 
-## Get started
+The app currently supports:
 
-1. Install dependencies
+- auth screen
+- dashboard tab
+- trades tab
 
-   ```bash
-   npm install
-   ```
+## Stack
 
-2. Start the app
+- Expo Router
+- React Native
+- Bun package manager
+- `@expo/ui` for native auth views
 
-   ```bash
-   npx expo start
-   ```
+## Current UI State
 
-In the output, you'll find options to open the app in a
+Implemented now:
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+- Android auth screen uses Expo UI Jetpack Compose
+- iOS auth screen uses Expo UI SwiftUI
+- dashboard and trades are connected to the BurrFx API
+- account refresh and bot start/stop are wired to the backend
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+The auth screen is the most native part of the app today. Dashboard and trades are functional and API-backed, with further native UI work still possible.
 
-## Get a fresh project
+## Requirements
 
-When you're ready, run:
+- Bun
+- Android Studio emulator or iOS Simulator
+- the BurrFx API running and reachable from the emulator or device
 
-```bash
-npm run reset-project
+## Environment
+
+Copy the example file:
+
+```powershell
+Copy-Item .env.example .env
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Set:
 
-### Other setup steps
+```env
+EXPO_PUBLIC_BURRFX_API_URL=http://10.0.2.2:8000
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+Use the right base URL for your setup:
 
-## Learn more
+- Android emulator on the same machine as the API: `http://10.0.2.2:8000`
+- physical device on the same LAN: `http://<your-windows-ip>:8000`
 
-To learn more about developing your project with Expo, look at the following resources:
+You can also override the API URL directly on the auth screen.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Install Dependencies
 
-## Join the community
+```powershell
+cd burrfx
+bun install
+```
 
-Join our community of developers creating universal apps.
+## Run The App
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Build and install the Android development client:
+
+```powershell
+bun run android
+```
+
+Start Metro for the dev client:
+
+```powershell
+bun start
+```
+
+Other scripts:
+
+- `bun run ios`
+- `bun run web`
+- `bun run typecheck`
+- `bun run lint`
+- `bun run start:go`
+
+The default `start` script uses `expo start --dev-client`.
+
+## Expected App Flow
+
+1. Open the app.
+2. Enter the API URL, MT5 account number, password, and broker server.
+3. The app calls the BurrFx API.
+4. The server logs into MT5 on the Windows machine.
+5. After a successful login, the app redirects to the tabs.
+6. Dashboard shows account summary and bot controls.
+7. Trades shows open positions plus balance, equity, margin, and free margin.
+
+## Important Notes
+
+- The mobile app does not talk to MetaTrader 5 directly.
+- The API is the only bridge between the app and MT5.
+- If the API is unreachable, the auth screen will show a connection error.
+- If you test on Android and the server is on your computer, do not use `localhost` inside the app unless you know the device can resolve it correctly.
+
+## Useful Paths
+
+- `src/app/index.tsx`: auth route
+- `src/features/auth/`: native auth screen implementations
+- `src/app/(tabs)/(dashboard)/dashboard.tsx`: dashboard tab
+- `src/app/(tabs)/(trades)/trades.tsx`: trades tab
+- `src/providers/app-session-provider.tsx`: shared API session state
+- `src/lib/api.ts`: HTTP client for the BurrFx backend

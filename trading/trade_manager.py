@@ -7,21 +7,19 @@ from config import (
     FAST_MA,
     SLOW_MA,
     ATR_PERIOD,
-    TRAIL_FACTOR,
     MAGIC_NUMBER,
-    ORDER_DEVIATION,
-    BREAK_EVEN_TRIGGER_RATIO,
-    BREAK_EVEN_ATR_BUFFER,
-    TP_EXTENSION_TRIGGER_RATIO,
-    TP1_LOCK_ATR_BUFFER
+    ORDER_DEVIATION
 )
-
 from trading.account_stats import update_profit
-from trading.debug_logger import log_event, log_mt5_error
-from trading.pivot_points import get_daily_pivots
-from trading.risk_manager import calculate_lot_size
-from config import SL_ATR_MULTIPLIER
+from trading.debug_logger import (
+    log_event,
+    log_mt5_error
+)
 from trading.journal import log_trade
+from trading.pivot_points import get_daily_pivots
+from trading.trading_settings import (
+    get_trading_settings
+)
 
 
 # ===================================
@@ -86,15 +84,13 @@ def check_crossover(df):
     prev = df.iloc[-2]
     curr = df.iloc[-1]
 
-    # BUY SIGNAL
     if (
         prev["ma_fast"] <= prev["ma_slow"]
         and curr["ma_fast"] > curr["ma_slow"]
     ):
         return "BUY"
 
-    # SELL SIGNAL
-    elif (
+    if (
         prev["ma_fast"] >= prev["ma_slow"]
         and curr["ma_fast"] < curr["ma_slow"]
     ):
@@ -107,15 +103,22 @@ def check_crossover(df):
 # TRAILING STOP USING ATR
 # ===================================
 
-def get_trailing_stop(order_type, price, atr):
+def get_trailing_stop(
+    order_type,
+    price,
+    atr,
+    trail_factor=None
+):
+
+    if trail_factor is None:
+        trail_factor = get_trading_settings()[
+            "trail_factor"
+        ]
 
     if order_type == "BUY":
+        return price - (atr * trail_factor)
 
-        return price - (atr * TRAIL_FACTOR)
-
-    else:
-
-        return price + (atr * TRAIL_FACTOR)
+    return price + (atr * trail_factor)
 
 
 # ===================================
@@ -177,6 +180,8 @@ def execute_trade(
     strategy_codes=None
 ):
 
+    settings = get_trading_settings()
+
     log_event(
         "execute_trade_requested",
         symbol=symbol,
@@ -184,11 +189,11 @@ def execute_trade(
         lot_size=lot_size,
         price=price,
         atr=atr,
+        profile=settings["id"],
         strategy_names=strategy_names or [],
         strategy_codes=strategy_codes or []
     )
 
-    # Prevent duplicate trades
     if has_open_position(symbol):
 
         print(f"{symbol}: Position already open")
@@ -196,88 +201,88 @@ def execute_trade(
             "execute_trade_skipped",
             level="warning",
             symbol=symbol,
+            profile=settings["id"],
             reason="position_already_open"
         )
         return None
 
-    # =========================
-    # ATR STOP LOSS
-    # =========================
-
     if order_type == "BUY":
-
         sl = price - (
             atr
-            * SL_ATR_MULTIPLIER
+            * settings["sl_atr_multiplier"]
         )
-
+        order_type_mt5 = mt5.ORDER_TYPE_BUY
     else:
-
         sl = price + (
             atr
-            * SL_ATR_MULTIPLIER
+            * settings["sl_atr_multiplier"]
         )
-
-    # =========================
-    # PIVOT TAKE PROFIT
-    # =========================
-
-    pivots = get_daily_pivots(symbol)
-
-    if pivots is None:
-        print(f"{symbol}: Pivot unavailable")
-        log_event(
-            "execute_trade_skipped",
-            level="warning",
-            symbol=symbol,
-            reason="pivot_unavailable"
-        )
-        return None
-
-    if order_type == "BUY":
-        tp = pivots["R1"]
-
-        if tp <= price:
-            print("Invalid TP level")
-            log_event(
-                "execute_trade_skipped",
-                level="warning",
-                symbol=symbol,
-                reason="invalid_buy_tp",
-                tp=tp,
-                price=price
-            )
-            return None
-
-    else:
-        tp = pivots["S1"]
-
-        if tp >= price:
-            print("Invalid TP level")
-            log_event(
-                "execute_trade_skipped",
-                level="warning",
-                symbol=symbol,
-                reason="invalid_sell_tp",
-                tp=tp,
-                price=price
-            )
-            return None
-
-    print(
-        f"{symbol}: TP set to {tp:.5f}"
-    )
-
-    if order_type == "BUY":
-
-        order_type_mt5 = mt5.ORDER_TYPE_BUY
-
-    else:
-
         order_type_mt5 = mt5.ORDER_TYPE_SELL
 
-    request = {
+    tp = 0.0
 
+    if settings["use_take_profit"]:
+        pivots = get_daily_pivots(symbol)
+
+        if pivots is None:
+            print(f"{symbol}: Pivot unavailable")
+            log_event(
+                "execute_trade_skipped",
+                level="warning",
+                symbol=symbol,
+                profile=settings["id"],
+                reason="pivot_unavailable"
+            )
+            return None
+
+        if order_type == "BUY":
+            tp = pivots["R1"]
+
+            if tp <= price:
+                print("Invalid TP level")
+                log_event(
+                    "execute_trade_skipped",
+                    level="warning",
+                    symbol=symbol,
+                    profile=settings["id"],
+                    reason="invalid_buy_tp",
+                    tp=tp,
+                    price=price
+                )
+                return None
+        else:
+            tp = pivots["S1"]
+
+            if tp >= price:
+                print("Invalid TP level")
+                log_event(
+                    "execute_trade_skipped",
+                    level="warning",
+                    symbol=symbol,
+                    profile=settings["id"],
+                    reason="invalid_sell_tp",
+                    tp=tp,
+                    price=price
+                )
+                return None
+
+        print(
+            f"{symbol}: TP set to {tp:.5f}"
+        )
+
+    else:
+
+        print(
+            f"{symbol}: No TP for "
+            f"{settings['label']}"
+        )
+        log_event(
+            "execute_trade_without_take_profit",
+            symbol=symbol,
+            profile=settings["id"]
+        )
+
+    request = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": symbol,
         "volume": lot_size,
@@ -288,17 +293,50 @@ def execute_trade(
         "deviation": ORDER_DEVIATION,
         "magic": MAGIC_NUMBER,
         "comment": _build_order_comment(strategy_codes),
-
         "type_time": mt5.ORDER_TIME_GTC,
-
-        "type_filling":
-            mt5.ORDER_FILLING_FOK
-
+        "type_filling": mt5.ORDER_FILLING_FOK
     }
+
+    adjusted_lot = _fit_order_volume(
+        symbol,
+        request
+    )
+
+    if adjusted_lot is None:
+        print(
+            f"{symbol}: Lot too large to open safely"
+        )
+        log_event(
+            "execute_trade_skipped",
+            level="warning",
+            symbol=symbol,
+            profile=settings["id"],
+            reason="volume_not_affordable",
+            requested_lot=lot_size,
+            sl=sl,
+            tp=tp
+        )
+        return None
+
+    if adjusted_lot != lot_size:
+        print(
+            f"{symbol}: Lot adjusted from "
+            f"{lot_size} to {adjusted_lot}"
+        )
+        log_event(
+            "execute_trade_volume_adjusted",
+            symbol=symbol,
+            profile=settings["id"],
+            requested_lot=lot_size,
+            adjusted_lot=adjusted_lot
+        )
+
+    request["volume"] = adjusted_lot
 
     log_event(
         "order_send_request",
         symbol=symbol,
+        profile=settings["id"],
         request=request
     )
 
@@ -313,7 +351,7 @@ def execute_trade(
         log_trade(
             symbol,
             order_type,
-            lot_size,
+            adjusted_lot,
             price,
             sl,
             tp,
@@ -333,6 +371,7 @@ def execute_trade(
             "order_send_rejected",
             level="error",
             symbol=symbol,
+            profile=settings["id"],
             request=request,
             result=result
         )
@@ -344,7 +383,7 @@ def execute_trade(
         log_trade(
             symbol,
             order_type,
-            lot_size,
+            adjusted_lot,
             price,
             sl,
             tp,
@@ -361,6 +400,7 @@ def execute_trade(
     log_event(
         "order_send_success",
         symbol=symbol,
+        profile=settings["id"],
         request=request,
         result=result
     )
@@ -368,7 +408,7 @@ def execute_trade(
     log_trade(
         symbol,
         order_type,
-        lot_size,
+        adjusted_lot,
         price,
         sl,
         tp,
@@ -391,14 +431,11 @@ def update_trade_profit(
 ):
 
     if order_type == "BUY":
-
         profit = (
             current_price
             - entry_price
         ) * volume
-
     else:
-
         profit = (
             entry_price
             - current_price
@@ -417,6 +454,7 @@ def update_trade_profit(
 
     return profit
 
+
 # ===================================
 # Position Protection Management
 # ===================================
@@ -426,6 +464,21 @@ def trail_positions(
     timeframe_code=mt5.TIMEFRAME_M15,
     timeframe_label="M15"
 ):
+
+    settings = get_trading_settings()
+    use_take_profit = settings[
+        "use_take_profit"
+    ]
+    extend_take_profit = (
+        settings["extend_take_profit"]
+        and use_take_profit
+    )
+    use_break_even = settings[
+        "use_break_even"
+    ]
+    use_trailing_stop = settings[
+        "use_trailing_stop"
+    ]
 
     positions = mt5.positions_get(symbol=symbol)
 
@@ -441,6 +494,7 @@ def trail_positions(
         log_event(
             "trail_positions_skipped",
             symbol=symbol,
+            profile=settings["id"],
             reason="no_open_positions"
         )
         return
@@ -462,9 +516,7 @@ def trail_positions(
         return
 
     df = pd.DataFrame(rates)
-
     df = calculate_atr(df)
-
     atr = df["atr"].iloc[-1]
 
     if pd.isna(atr):
@@ -472,6 +524,7 @@ def trail_positions(
             "trail_positions_skipped",
             level="warning",
             symbol=symbol,
+            profile=settings["id"],
             reason="atr_unavailable",
             timeframe=timeframe_label
         )
@@ -516,7 +569,11 @@ def trail_positions(
             or 0
         ) * point
     )
-    pivots = get_daily_pivots(symbol)
+    pivots = (
+        get_daily_pivots(symbol)
+        if use_take_profit
+        else None
+    )
 
     for pos in positions:
 
@@ -525,6 +582,7 @@ def trail_positions(
                 "trail_positions_skipped",
                 symbol=symbol,
                 ticket=pos.ticket,
+                profile=settings["id"],
                 reason="non_bot_position"
             )
             continue
@@ -537,6 +595,7 @@ def trail_positions(
                 level="warning",
                 symbol=symbol,
                 ticket=pos.ticket,
+                profile=settings["id"],
                 reason="unsupported_position_type",
                 position_type=pos.type
             )
@@ -553,7 +612,17 @@ def trail_positions(
         tp1 = None
         tp2 = None
 
-        if pivots is not None:
+        if (
+            not use_take_profit
+            and desired_tp > 0
+        ):
+            desired_tp = 0.0
+            reasons.append("tp_removed")
+
+        if (
+            use_take_profit
+            and pivots is not None
+        ):
             tp1, tp2 = _get_pivot_targets(
                 position_type,
                 pivots
@@ -574,7 +643,8 @@ def trail_positions(
                     position_type=position_type,
                     entry=pos.price_open,
                     tp1=tp1,
-                    tp2=tp2
+                    tp2=tp2,
+                    profile=settings["id"]
                 )
                 tp1 = None
                 tp2 = None
@@ -588,29 +658,27 @@ def trail_positions(
             )
 
             if desired_tp <= 0:
-                desired_tp = (
-                    tp2
-                    if (
-                        tp2 is not None
-                        and progress_to_tp1
-                        >= TP_EXTENSION_TRIGGER_RATIO
-                    )
-                    else tp1
-                )
-                reasons.append(
-                    "tp_restored"
-                )
+                desired_tp = tp1
+                reasons.append("tp_restored")
 
             if (
-                progress_to_tp1
-                >= BREAK_EVEN_TRIGGER_RATIO
+                use_break_even
+                and progress_to_tp1
+                >= settings[
+                    "break_even_trigger_ratio"
+                ]
             ):
                 break_even_sl = _clamp_stop_loss(
                     position_type,
                     _build_break_even_stop(
                         position_type,
                         pos.price_open,
-                        atr
+                        atr,
+                        break_even_atr_buffer=(
+                            settings[
+                                "break_even_atr_buffer"
+                            ]
+                        )
                     ),
                     price,
                     min_stop_gap,
@@ -628,14 +696,15 @@ def trail_positions(
                     point
                 ):
                     desired_sl = improved_sl
-                    reasons.append(
-                        "break_even"
-                    )
+                    reasons.append("break_even")
 
             if (
-                tp2 is not None
+                extend_take_profit
+                and tp2 is not None
                 and progress_to_tp1
-                >= TP_EXTENSION_TRIGGER_RATIO
+                >= settings[
+                    "tp_extension_trigger_ratio"
+                ]
                 and not _prices_match(
                     desired_tp,
                     tp2,
@@ -648,7 +717,8 @@ def trail_positions(
                 )
 
             tp2_active = (
-                tp2 is not None
+                extend_take_profit
+                and tp2 is not None
                 and _prices_match(
                     desired_tp,
                     tp2,
@@ -657,12 +727,15 @@ def trail_positions(
             )
 
             if (
-                tp2_active
+                use_trailing_stop
+                and tp2_active
                 and _has_cleared_level(
                     position_type,
                     price,
                     tp1,
-                    atr * TP1_LOCK_ATR_BUFFER
+                    atr * settings[
+                        "tp1_lock_atr_buffer"
+                    ]
                 )
             ):
                 profit_lock_sl = _clamp_stop_loss(
@@ -693,7 +766,10 @@ def trail_positions(
                     get_trailing_stop(
                         position_type,
                         price,
-                        atr
+                        atr,
+                        trail_factor=settings[
+                            "trail_factor"
+                        ]
                     ),
                     price,
                     min_stop_gap,
@@ -715,38 +791,35 @@ def trail_positions(
                         "atr_trailing_after_tp2"
                     )
 
-        elif _stop_is_secured(
-            position_type,
-            desired_sl,
-            pos.price_open,
-            point
-        ):
-            trailing_sl = _clamp_stop_loss(
-                position_type,
-                get_trailing_stop(
-                    position_type,
-                    price,
-                    atr
-                ),
-                price,
-                min_stop_gap,
-                digits
-            )
-            improved_sl = _select_more_protective_stop(
-                position_type,
-                desired_sl,
-                trailing_sl
-            )
-
-            if _price_has_changed(
-                desired_sl,
-                improved_sl,
-                point
-            ):
-                desired_sl = improved_sl
-                reasons.append(
-                    "atr_trailing_fallback"
+        else:
+            desired_sl, fallback_reasons = (
+                _apply_risk_distance_protection(
+                    position_type=position_type,
+                    entry_price=pos.price_open,
+                    current_price=price,
+                    current_sl=desired_sl,
+                    atr=atr,
+                    min_stop_gap=min_stop_gap,
+                    digits=digits,
+                    point=point,
+                    use_break_even=use_break_even,
+                    use_trailing_stop=use_trailing_stop,
+                    break_even_trigger_ratio=(
+                        settings[
+                            "break_even_trigger_ratio"
+                        ]
+                    ),
+                    break_even_atr_buffer=(
+                        settings[
+                            "break_even_atr_buffer"
+                        ]
+                    ),
+                    trail_factor=settings[
+                        "trail_factor"
+                    ]
                 )
+            )
+            reasons.extend(fallback_reasons)
 
         if not reasons:
             continue
@@ -773,6 +846,7 @@ def trail_positions(
             new_sl=desired_sl,
             new_tp=desired_tp,
             atr=atr,
+            profile=settings["id"],
             reasons=reasons,
             tp1=tp1,
             tp2=tp2
@@ -784,6 +858,7 @@ def trail_positions(
             new_tp=desired_tp,
             reason=",".join(reasons)
         )
+
 
 # ===================================
 # MODIFY POSITION TARGETS
@@ -849,17 +924,11 @@ def modify_position(
         return False
 
     request = {
-
-        "action":
-            mt5.TRADE_ACTION_SLTP,
-
+        "action": mt5.TRADE_ACTION_SLTP,
         "symbol": position.symbol,
         "position": position.ticket,
-
         "sl": final_sl,
-
         "tp": final_tp
-
     }
 
     log_event(
@@ -1011,11 +1080,19 @@ def _calculate_progress_ratio(
 def _build_break_even_stop(
     position_type,
     entry_price,
-    atr
+    atr,
+    break_even_atr_buffer=None
 ):
 
+    if break_even_atr_buffer is None:
+        break_even_atr_buffer = (
+            get_trading_settings()[
+                "break_even_atr_buffer"
+            ]
+        )
+
     buffer_distance = (
-        atr * BREAK_EVEN_ATR_BUFFER
+        atr * break_even_atr_buffer
     )
 
     if position_type == "BUY":
@@ -1147,6 +1224,337 @@ def _normalize_price(
         float(price or 0.0),
         digits
     )
+
+
+def _get_volume_precision(step):
+
+    normalized_step = (
+        f"{float(step):.8f}"
+        .rstrip("0")
+        .rstrip(".")
+    )
+
+    if "." not in normalized_step:
+        return 0
+
+    return len(
+        normalized_step.split(".")[1]
+    )
+
+
+def _normalize_volume(
+    volume,
+    min_lot,
+    max_lot,
+    step
+):
+
+    normalized_step = (
+        float(step)
+        if float(step or 0.0) > 0
+        else (
+            float(min_lot)
+            if float(min_lot or 0.0) > 0
+            else 0.01
+        )
+    )
+    normalized_min_lot = (
+        float(min_lot)
+        if float(min_lot or 0.0) > 0
+        else normalized_step
+    )
+    normalized_max_lot = max(
+        (
+            float(max_lot)
+            if float(max_lot or 0.0) > 0
+            else normalized_min_lot
+        ),
+        normalized_min_lot
+    )
+    precision = _get_volume_precision(
+        normalized_step
+    )
+    capped_volume = max(
+        normalized_min_lot,
+        min(
+            normalized_max_lot,
+            float(volume)
+        )
+    )
+    stepped_volume = int(
+        (capped_volume + 1e-12)
+        / normalized_step
+    ) * normalized_step
+
+    return round(
+        max(
+            normalized_min_lot,
+            min(
+                normalized_max_lot,
+                stepped_volume
+            )
+        ),
+        precision
+    )
+
+
+def _reduce_volume(
+    volume,
+    min_lot,
+    step
+):
+
+    precision = _get_volume_precision(step)
+    reduced_volume = round(
+        float(volume) - float(step),
+        precision
+    )
+
+    if reduced_volume + 1e-9 < float(min_lot):
+        return None
+
+    return reduced_volume
+
+
+def _volumes_match(
+    left_volume,
+    right_volume,
+    step
+):
+
+    return abs(
+        float(left_volume or 0.0)
+        - float(right_volume or 0.0)
+    ) <= max(float(step) / 2.0, 1e-9)
+
+
+def _fit_order_volume(
+    symbol,
+    request
+):
+
+    symbol_info = mt5.symbol_info(symbol)
+
+    if symbol_info is None:
+        log_mt5_error(
+            "order_volume_check_failed",
+            symbol=symbol,
+            reason="symbol_info_unavailable"
+        )
+        return None
+
+    min_lot = float(
+        getattr(symbol_info, "volume_min", 0.01)
+        or 0.01
+    )
+    max_lot = float(
+        getattr(symbol_info, "volume_max", min_lot)
+        or min_lot
+    )
+    step = float(
+        getattr(symbol_info, "volume_step", min_lot)
+        or min_lot
+    )
+    requested_volume = float(
+        request.get("volume", min_lot)
+        or min_lot
+    )
+    candidate_volume = _normalize_volume(
+        requested_volume,
+        min_lot,
+        max_lot,
+        step
+    )
+    attempts = 0
+    last_retcode = None
+    last_comment = None
+
+    while candidate_volume is not None:
+
+        check_request = request.copy()
+        check_request["volume"] = candidate_volume
+        check_result = mt5.order_check(
+            check_request
+        )
+        attempts += 1
+
+        if (
+            check_result is not None
+            and check_result.retcode
+            == mt5.TRADE_RETCODE_DONE
+        ):
+            return candidate_volume
+
+        if check_result is None:
+            error_code, error_message = (
+                mt5.last_error()
+            )
+            last_retcode = error_code
+            last_comment = error_message
+        else:
+            last_retcode = getattr(
+                check_result,
+                "retcode",
+                None
+            )
+            last_comment = getattr(
+                check_result,
+                "comment",
+                None
+            )
+
+        next_volume = _reduce_volume(
+            candidate_volume,
+            min_lot,
+            step
+        )
+
+        if (
+            next_volume is None
+            or _volumes_match(
+                candidate_volume,
+                next_volume,
+                step
+            )
+        ):
+            break
+
+        candidate_volume = next_volume
+
+    log_event(
+        "order_volume_check_failed",
+        level="warning",
+        symbol=symbol,
+        requested_volume=requested_volume,
+        min_lot=min_lot,
+        max_lot=max_lot,
+        step=step,
+        attempts=attempts,
+        last_retcode=last_retcode,
+        last_comment=last_comment
+    )
+
+    return None
+
+
+def _apply_risk_distance_protection(
+    position_type,
+    entry_price,
+    current_price,
+    current_sl,
+    atr,
+    min_stop_gap,
+    digits,
+    point,
+    use_break_even,
+    use_trailing_stop,
+    break_even_trigger_ratio,
+    break_even_atr_buffer,
+    trail_factor
+):
+
+    desired_sl = current_sl
+    reasons = []
+    break_even_applied = False
+    risk_distance = abs(
+        float(entry_price or 0.0)
+        - float(current_sl or 0.0)
+    )
+
+    if risk_distance <= point:
+        return desired_sl, reasons
+
+    if position_type == "BUY":
+        break_even_target = (
+            entry_price + risk_distance
+        )
+    else:
+        break_even_target = (
+            entry_price - risk_distance
+        )
+
+    if use_break_even:
+        progress_to_break_even = (
+            _calculate_progress_ratio(
+                position_type,
+                entry_price,
+                current_price,
+                break_even_target
+            )
+        )
+
+        if (
+            progress_to_break_even
+            >= break_even_trigger_ratio
+        ):
+            break_even_sl = _clamp_stop_loss(
+                position_type,
+                _build_break_even_stop(
+                    position_type,
+                    entry_price,
+                    atr,
+                    break_even_atr_buffer=(
+                        break_even_atr_buffer
+                    )
+                ),
+                current_price,
+                min_stop_gap,
+                digits
+            )
+            improved_sl = _select_more_protective_stop(
+                position_type,
+                desired_sl,
+                break_even_sl
+            )
+
+            if _price_has_changed(
+                desired_sl,
+                improved_sl,
+                point
+            ):
+                desired_sl = improved_sl
+                reasons.append("break_even")
+                break_even_applied = True
+
+    if (
+        use_trailing_stop
+        and not break_even_applied
+        and _stop_is_secured(
+            position_type,
+            desired_sl,
+            entry_price,
+            point
+        )
+    ):
+        trailing_sl = _clamp_stop_loss(
+            position_type,
+            get_trailing_stop(
+                position_type,
+                current_price,
+                atr,
+                trail_factor=trail_factor
+            ),
+            current_price,
+            min_stop_gap,
+            digits
+        )
+        improved_sl = _select_more_protective_stop(
+            position_type,
+            desired_sl,
+            trailing_sl
+        )
+
+        if _price_has_changed(
+            desired_sl,
+            improved_sl,
+            point
+        ):
+            desired_sl = improved_sl
+            reasons.append(
+                "atr_trailing_fallback"
+            )
+
+    return desired_sl, reasons
 
 
 def _build_order_comment(strategy_codes=None):

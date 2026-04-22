@@ -7,6 +7,10 @@ from backtesting.backtester import backtest_menu
 from trading.debug_logger import init_debug_logger, log_event
 from trading.journal import init_trade_log
 from trading.strategy_settings import strategy_settings_menu
+from trading.trading_settings import (
+    get_trading_profile_label,
+    trading_settings_menu
+)
 
 
 def main_menu():
@@ -24,7 +28,11 @@ def main_menu():
         print("2 - Download History Data")
         print("3 - Backtest Strategy")
         print("4 - Strategy Settings")
-        print("5 - Exit")
+        print(
+            "5 - Trading Settings "
+            f"[{get_trading_profile_label()}]"
+        )
+        print("6 - Exit")
 
         choice = input("\nSelect option: ")
         log_event("main_menu_selection", choice=choice)
@@ -46,6 +54,10 @@ def main_menu():
             strategy_settings_menu()
 
         elif choice == "5":
+
+            trading_settings_menu()
+
+        elif choice == "6":
 
             clear_screen()
             log_event("app_exit_selected")

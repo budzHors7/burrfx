@@ -1,6 +1,6 @@
 import { ActivityIndicator, Pressable, Text } from "react-native";
 
-import { palette } from "@/lib/theme";
+import { useAppTheme } from "@/hooks/use-app-theme";
 
 type ActionButtonProps = {
   label: string;
@@ -17,19 +17,18 @@ export function ActionButton({
   disabled = false,
   loading = false,
 }: ActionButtonProps) {
+  const { colors } = useAppTheme();
   const isDisabled = disabled || loading;
 
   const backgroundColor =
     variant === "secondary"
-      ? palette.surfaceRaised
+      ? colors.surfaceRaised
       : variant === "danger"
-        ? palette.danger
-        : palette.accent;
+        ? colors.danger
+        : colors.accent;
 
   const textColor =
-    variant === "secondary"
-      ? palette.text
-      : palette.textOnAccent;
+    variant === "secondary" ? colors.text : colors.textOnAccent;
 
   return (
     <Pressable
@@ -46,12 +45,10 @@ export function ActionButton({
         borderCurve: "continuous",
         paddingHorizontal: 18,
         backgroundColor: isDisabled
-          ? palette.borderSoft
+          ? colors.borderSoft
           : backgroundColor,
         opacity: pressed ? 0.92 : 1,
-        boxShadow: isDisabled
-          ? "none"
-          : "0 18px 40px rgba(2, 12, 22, 0.24)",
+        boxShadow: isDisabled ? "none" : colors.shadowMd,
       })}
     >
       {loading ? (

@@ -1,13 +1,16 @@
 import {
   Button,
   Form,
+  HStack,
   Host,
+  Picker,
   Section,
   SecureField,
   Text,
   TextField,
   VStack,
 } from "@expo/ui/swift-ui";
+import { useState } from "react";
 import {
   autocorrectionDisabled,
   buttonStyle,
@@ -16,22 +19,26 @@ import {
   font,
   foregroundStyle,
   keyboardType,
+  pickerStyle,
   scrollDismissesKeyboard,
   submitLabel,
+  tag,
   textContentType,
   textFieldStyle,
   textInputAutocapitalization,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
 
-import { palette } from "@/lib/theme";
 import type { AuthScreenViewProps } from "@/features/auth/auth-screen.types";
+import { useAppTheme } from "@/hooks/use-app-theme";
 
 export function AuthScreenView({
   apiUrl,
   accountNumber,
   password,
   server,
+  tradingProfile,
+  tradingProfileOptions,
   errorMessage,
   isHydrating,
   isSubmitting,
@@ -39,74 +46,27 @@ export function AuthScreenView({
   onAccountNumberChange,
   onPasswordChange,
   onServerChange,
+  onTradingProfileChange,
   onSubmit,
 }: AuthScreenViewProps) {
+  const { colors, resolvedMode } = useAppTheme();
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const selectedProfile =
+    tradingProfileOptions.find(
+      (option) => option.id === tradingProfile
+    ) ?? tradingProfileOptions[1];
+
   return (
     <Host
-      colorScheme="dark"
+      colorScheme={resolvedMode}
       ignoreSafeArea="keyboard"
-      style={{ flex: 1 }}
+      style={{
+        flex: 1,
+        backgroundColor: colors.background,
+      }}
       useViewportSizeMeasurement
     >
       <Form modifiers={[scrollDismissesKeyboard("interactively")]}>
-        <Section
-          footer={
-            <Text
-              modifiers={[
-                foregroundStyle({
-                  type: "hierarchical",
-                  style: "secondary",
-                }),
-              ]}
-            >
-              Connect to your Windows-hosted BurrFx API, then let the server
-              log into MT5 and stream the account state back to the app.
-            </Text>
-          }
-          header={
-            <VStack alignment="leading" spacing={6}>
-              <Text
-                modifiers={[
-                  font({
-                    design: "rounded",
-                    size: 12,
-                    weight: "bold",
-                  }),
-                  foregroundStyle({
-                    type: "hierarchical",
-                    style: "tertiary",
-                  }),
-                ]}
-              >
-                BURRFX MOBILE
-              </Text>
-              <Text
-                modifiers={[
-                  font({
-                    design: "rounded",
-                    size: 30,
-                    weight: "bold",
-                  }),
-                ]}
-              >
-                MT5 bot control in your pocket.
-              </Text>
-            </VStack>
-          }
-        >
-          <Text
-            modifiers={[
-              foregroundStyle({
-                type: "hierarchical",
-                style: "secondary",
-              }),
-            ]}
-          >
-            Sign in with your API address, account number, password, and broker
-            server to open the session on your Windows host.
-          </Text>
-        </Section>
-
         <Section title="Connection">
           <TextField
             defaultValue={apiUrl}
@@ -133,17 +93,93 @@ export function AuthScreenView({
             onValueChange={onAccountNumberChange}
             placeholder="12345678"
           />
-          <SecureField
-            defaultValue={password}
+          {isPasswordVisible ? (
+            <TextField
+              key="password-visible"
+              defaultValue={password}
+              modifiers={[
+                textFieldStyle("roundedBorder"),
+                textInputAutocapitalization("never"),
+                autocorrectionDisabled(),
+                textContentType("password"),
+                submitLabel("next"),
+                disabled(isSubmitting),
+              ]}
+              onValueChange={onPasswordChange}
+              placeholder="MT5 account password"
+            />
+          ) : (
+            <SecureField
+              key="password-hidden"
+              defaultValue={password}
+              modifiers={[
+                textFieldStyle("roundedBorder"),
+                textInputAutocapitalization("never"),
+                autocorrectionDisabled(),
+                textContentType("password"),
+                submitLabel("next"),
+                disabled(isSubmitting),
+              ]}
+              onValueChange={onPasswordChange}
+              placeholder="MT5 account password"
+            />
+          )}
+          <Picker
+            label="Trading Settings"
             modifiers={[
-              textFieldStyle("roundedBorder"),
-              textContentType("password"),
-              submitLabel("next"),
+              pickerStyle("segmented"),
               disabled(isSubmitting),
             ]}
-            onValueChange={onPasswordChange}
-            placeholder="MT5 account password"
-          />
+            onSelectionChange={(value) => {
+              if (!value) {
+                return;
+              }
+
+              onTradingProfileChange(value);
+            }}
+            selection={tradingProfile}
+          >
+            {tradingProfileOptions.map((option) => (
+              <Text
+                key={option.id}
+                modifiers={[tag(option.id)]}
+              >
+                {getTradingProfileSegmentLabel(option.id)}
+              </Text>
+            ))}
+          </Picker>
+          <Text
+            modifiers={[
+              foregroundStyle({
+                type: "hierarchical",
+                style: "secondary",
+              }),
+            ]}
+          >
+            {selectedProfile.label}: {selectedProfile.description}
+          </Text>
+          <HStack alignment="center" spacing={12}>
+            <Text
+              modifiers={[
+                foregroundStyle({
+                  type: "hierarchical",
+                  style: "secondary",
+                }),
+              ]}
+            >
+              Hidden by default.
+            </Text>
+            <Button
+              label={isPasswordVisible ? "Hide" : "Show"}
+              modifiers={[
+                buttonStyle("plain"),
+                disabled(isSubmitting),
+              ]}
+              onPress={() => {
+                setIsPasswordVisible((current) => !current);
+              }}
+            />
+          </HStack>
           <TextField
             defaultValue={server}
             modifiers={[
@@ -156,11 +192,21 @@ export function AuthScreenView({
             onValueChange={onServerChange}
             placeholder="Broker-Demo"
           />
+          <Text
+            modifiers={[
+              foregroundStyle({
+                type: "hierarchical",
+                style: "secondary",
+              }),
+            ]}
+          >
+            MT5 still requires the broker server value for login.
+          </Text>
         </Section>
 
         {errorMessage ? (
           <Section title="Connection Issue">
-            <Text modifiers={[foregroundStyle(palette.danger)]}>
+            <Text modifiers={[foregroundStyle(colors.danger)]}>
               {errorMessage}
             </Text>
           </Section>
@@ -187,7 +233,7 @@ export function AuthScreenView({
             modifiers={[
               buttonStyle("borderedProminent"),
               controlSize("large"),
-              tint(palette.accent),
+              tint(colors.accent),
               disabled(isSubmitting),
             ]}
             onPress={onSubmit}
@@ -210,4 +256,18 @@ export function AuthScreenView({
       </Form>
     </Host>
   );
+}
+
+function getTradingProfileSegmentLabel(
+  tradingProfileId: string
+) {
+  if (tradingProfileId === "smart_risk") {
+    return "Smart";
+  }
+
+  if (tradingProfileId === "highly_risky") {
+    return "Risky";
+  }
+
+  return "Regular";
 }

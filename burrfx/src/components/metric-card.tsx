@@ -1,18 +1,25 @@
-import { Text, View } from "react-native";
+import {
+  Text,
+  View,
+  type ColorValue,
+} from "react-native";
 
-import { palette } from "@/lib/theme";
+import { useAppTheme } from "@/hooks/use-app-theme";
 
 type MetricCardProps = {
   label: string;
   value: string;
-  accent?: string;
+  accent?: ColorValue;
 };
 
 export function MetricCard({
   label,
   value,
-  accent = palette.accent,
+  accent,
 }: MetricCardProps) {
+  const { colors } = useAppTheme();
+  const metricAccent = accent ?? colors.accent;
+
   return (
     <View
       style={{
@@ -22,10 +29,10 @@ export function MetricCard({
         borderRadius: 24,
         borderCurve: "continuous",
         borderWidth: 1,
-        borderColor: palette.borderSoft,
-        backgroundColor: "rgba(11, 32, 50, 0.9)",
+        borderColor: colors.borderSoft,
+        backgroundColor: colors.panel,
         padding: 18,
-        boxShadow: "0 16px 38px rgba(2, 12, 22, 0.22)",
+        boxShadow: colors.shadowMd,
       }}
     >
       <View
@@ -33,13 +40,13 @@ export function MetricCard({
           height: 4,
           width: 42,
           borderRadius: 999,
-          backgroundColor: accent,
+          backgroundColor: metricAccent,
         }}
       />
       <Text
         selectable
         style={{
-          color: palette.textDim,
+          color: colors.textDim,
           fontSize: 13,
           fontWeight: "600",
           textTransform: "uppercase",
@@ -51,7 +58,7 @@ export function MetricCard({
       <Text
         selectable
         style={{
-          color: palette.text,
+          color: colors.text,
           fontSize: 22,
           fontWeight: "800",
           fontVariant: ["tabular-nums"],

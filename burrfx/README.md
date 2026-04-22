@@ -7,24 +7,34 @@ The app currently supports:
 - auth screen
 - dashboard tab
 - trades tab
+- logs tab
+- journal tab
+- Android floating trade window
 
 ## Stack
 
 - Expo Router
 - React Native
 - Bun package manager
-- `@expo/ui` for native auth views
+- `@expo/ui` for native iOS auth controls
+- `expo-sqlite` for local persistence and the account journal
+- `expo-draw-over-apps` for the Android floating trade window
 
 ## Current UI State
 
 Implemented now:
 
-- Android auth screen uses Expo UI Jetpack Compose
 - iOS auth screen uses Expo UI SwiftUI
+- Android auth screen uses a dedicated React Native auth view
+- auth persistence stores the last successful API URL and re-checks the active server session on launch
 - dashboard and trades are connected to the BurrFx API
-- account refresh and bot start/stop are wired to the backend
+- logs tab reads server-side account logs from the API
+- journal tab stores local account progress snapshots in SQLite
+- theme mode supports `system`, `light`, and `dark`
+- Android color mode supports `System Colors` and `BurrFx Blue`
+- Android floating window asks for draw-over-apps permission before showing the overlay
 
-The auth screen is the most native part of the app today. Dashboard and trades are functional and API-backed, with further native UI work still possible.
+The mobile app does not connect to MetaTrader 5 directly. The API is the bridge between the phone and the MT5 terminal running on Windows.
 
 ## Requirements
 
@@ -55,18 +65,13 @@ You can also override the API URL directly on the auth screen.
 
 ## Install Dependencies
 
+Run from `burrfx/`:
+
 ```powershell
-cd burrfx
 bun install
 ```
 
 ## Run The App
-
-Build and install the Android development client:
-
-```powershell
-bun run android
-```
 
 Start Metro for the dev client:
 
@@ -74,32 +79,47 @@ Start Metro for the dev client:
 bun start
 ```
 
-Other scripts:
+In a second terminal from `burrfx/`, build and install the Android development client:
+
+```powershell
+bun run android
+```
+
+Useful scripts:
 
 - `bun run ios`
-- `bun run web`
 - `bun run typecheck`
 - `bun run lint`
 - `bun run start:go`
 
-The default `start` script uses `expo start --dev-client`.
+For a one-shot Android native build and install check without starting Metro again:
+
+```powershell
+bunx expo run:android --no-bundler
+```
+
+If you add or remove native Expo modules, rebuild the Android or iOS dev client before testing.
 
 ## Expected App Flow
 
 1. Open the app.
-2. Enter the API URL, MT5 account number, password, and broker server.
+2. Enter the API URL, MT5 account number, password, trading settings, and broker server.
 3. The app calls the BurrFx API.
 4. The server logs into MT5 on the Windows machine.
-5. After a successful login, the app redirects to the tabs.
-6. Dashboard shows account summary and bot controls.
-7. Trades shows open positions plus balance, equity, margin, and free margin.
+5. After a successful login, the app opens the authenticated tabs.
+6. Dashboard shows account summary, bot state, theme controls, and bot start or stop actions.
+7. Trades shows open positions and, on Android, can show a floating trade window after permission is granted.
+8. Logs shows server-side account and runtime log entries.
+9. Journal shows the local SQLite account history snapshots captured while the app is tracking the account.
 
 ## Important Notes
 
 - The mobile app does not talk to MetaTrader 5 directly.
 - The API is the only bridge between the app and MT5.
 - If the API is unreachable, the auth screen will show a connection error.
-- If you test on Android and the server is on your computer, do not use `localhost` inside the app unless you know the device can resolve it correctly.
+- The selected trading profile is sent during login and persisted on the server so the bot uses the same profile as the terminal app.
+- If you test on Android and the server is on your computer, do not use `localhost` inside the app unless the device can resolve it correctly.
+- The Android floating window only appears after the user allows draw-over-apps permission in system settings.
 
 ## Useful Paths
 
@@ -107,5 +127,9 @@ The default `start` script uses `expo start --dev-client`.
 - `src/features/auth/`: native auth screen implementations
 - `src/app/(tabs)/(dashboard)/dashboard.tsx`: dashboard tab
 - `src/app/(tabs)/(trades)/trades.tsx`: trades tab
+- `src/app/(tabs)/(logs)/logs.tsx`: logs tab
+- `src/app/(tabs)/(journal)/journal.tsx`: journal tab
 - `src/providers/app-session-provider.tsx`: shared API session state
+- `src/providers/theme-mode-provider.tsx`: persisted theme and Android accent state
+- `src/lib/account-journal.ts`: local SQLite journal storage
 - `src/lib/api.ts`: HTTP client for the BurrFx backend

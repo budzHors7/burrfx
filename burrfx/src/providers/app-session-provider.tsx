@@ -8,14 +8,26 @@ import {
   useState,
   type PropsWithChildren,
 } from "react";
+import { Platform } from "react-native";
 
 import { ApiError, api, defaultApiBaseUrl } from "@/lib/api";
+import { appendAccountJournalSnapshot } from "@/lib/account-journal";
+import {
+  readPersistedConnectionState,
+  updatePersistedConnectionState,
+} from "@/lib/auth-storage";
+import { TRADE_OVERLAY_BUBBLE_ID } from "@/lib/trade-overlay";
+import { updateTradeOverlaySnapshot } from "@/lib/trade-overlay-store";
+import { getTradingProfileOption } from "@/lib/trading-profiles";
 import type {
+  AccountLogEntry,
+  AccountLogsResponse,
   AccountOverviewResponse,
   AuthLoginResponse,
   AuthSessionResponse,
   BotStatusResponse,
   OpenTradeItem,
+  TradingProfileId,
 } from "@/types/api";
 
 type LoginInput = {
@@ -23,7 +35,10 @@ type LoginInput = {
   accountNumber: string;
   password: string;
   server: string;
+  tradingProfile: TradingProfileId;
 };
+
+type DrawOverAppsModule = typeof import("expo-draw-over-apps");
 
 type AppSessionContextValue = {
   apiBaseUrl: string;
@@ -31,6 +46,9 @@ type AppSessionContextValue = {
   account: AccountOverviewResponse | null;
   trades: OpenTradeItem[];
   botStatus: BotStatusResponse | null;
+  logs: AccountLogEntry[];
+  logSourceFile: string | null;
+  journalRevision: number;
   errorMessage: string | null;
   isHydrating: boolean;
   isRefreshing: boolean;
@@ -47,6 +65,9 @@ type AppSessionContextValue = {
 
 const AppSessionContext = createContext<AppSessionContextValue | null>(null);
 
+const initialConnectionState =
+  readPersistedConnectionState();
+
 function getErrorMessage(
   error: unknown
 ): string {
@@ -61,21 +82,54 @@ function getErrorMessage(
   return "Something went wrong while talking to the BurrFx server.";
 }
 
+function getEmptyLogsResponse(): AccountLogsResponse {
+  return {
+    count: 0,
+    source_file: null,
+    entries: [],
+  };
+}
+
 export function AppSessionProvider({
   children,
 }: PropsWithChildren) {
-  const [apiBaseUrl, setApiBaseUrlState] = useState(
-    defaultApiBaseUrl
+  const [apiBaseUrl, setApiBaseUrlState] = useState(() =>
+    api.normalizeBaseUrl(
+      initialConnectionState.apiBaseUrl ||
+        defaultApiBaseUrl
+    )
   );
   const [session, setSession] = useState<AuthSessionResponse | null>(null);
   const [account, setAccount] = useState<AccountOverviewResponse | null>(null);
   const [trades, setTrades] = useState<OpenTradeItem[]>([]);
   const [botStatus, setBotStatus] = useState<BotStatusResponse | null>(null);
+  const [logs, setLogs] = useState<AccountLogEntry[]>([]);
+  const [logSourceFile, setLogSourceFile] =
+    useState<string | null>(null);
+  const [journalRevision, setJournalRevision] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isHydrating, setIsHydrating] = useState(false);
+  const [isHydrating, setIsHydrating] = useState(() =>
+    Boolean(
+      api.normalizeBaseUrl(
+        initialConnectionState.apiBaseUrl ||
+          defaultApiBaseUrl
+      )
+    )
+  );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const hasHydratedOnceRef = useRef(false);
+  const initialApiBaseUrlRef = useRef(
+    api.normalizeBaseUrl(
+      initialConnectionState.apiBaseUrl ||
+        defaultApiBaseUrl
+    )
+  );
+  const overlayModuleRef =
+    useRef<DrawOverAppsModule | null>(null);
+  const latestTradesRef = useRef<OpenTradeItem[]>([]);
+  const latestSessionAuthenticatedRef =
+    useRef(false);
 
   const isAuthenticated = Boolean(session?.authenticated);
 
@@ -83,6 +137,8 @@ export function AppSessionProvider({
     startTransition(() => {
       setAccount(null);
       setTrades([]);
+      setLogs([]);
+      setLogSourceFile(null);
     });
   }
 
@@ -90,14 +146,28 @@ export function AppSessionProvider({
     nextSession: AuthSessionResponse,
     nextAccount: AccountOverviewResponse | null,
     nextTrades: OpenTradeItem[],
-    nextBotStatus: BotStatusResponse | null
+    nextBotStatus: BotStatusResponse | null,
+    nextLogs: AccountLogEntry[],
+    nextLogSourceFile: string | null
   ) {
     startTransition(() => {
       setSession(nextSession);
       setAccount(nextAccount);
       setTrades(nextTrades);
       setBotStatus(nextBotStatus);
+      setLogs(nextLogs);
+      setLogSourceFile(nextLogSourceFile);
     });
+  }
+
+  async function loadAccountLogsSafe(
+    targetBaseUrl: string
+  ) {
+    try {
+      return await api.getAccountLogs(targetBaseUrl);
+    } catch {
+      return getEmptyLogsResponse();
+    }
   }
 
   async function loadSnapshot(
@@ -111,6 +181,8 @@ export function AppSessionProvider({
       startTransition(() => {
         setSession(null);
         setBotStatus(null);
+        setLogs([]);
+        setLogSourceFile(null);
       });
       clearAuthedData();
       return;
@@ -120,20 +192,31 @@ export function AppSessionProvider({
     const nextBotStatus = await api.getBotStatus(targetBaseUrl);
 
     if (!nextSession.authenticated) {
-      applySnapshot(nextSession, null, [], nextBotStatus);
+      applySnapshot(
+        nextSession,
+        null,
+        [],
+        nextBotStatus,
+        [],
+        null
+      );
       return;
     }
 
-    const [nextAccount, nextTrades] = await Promise.all([
-      api.getAccountOverview(targetBaseUrl),
-      api.getOpenTrades(targetBaseUrl),
-    ]);
+    const [nextAccount, nextTrades, nextLogs] =
+      await Promise.all([
+        api.getAccountOverview(targetBaseUrl),
+        api.getOpenTrades(targetBaseUrl),
+        loadAccountLogsSafe(targetBaseUrl),
+      ]);
 
     applySnapshot(
       nextSession,
       nextAccount,
       nextTrades.trades,
-      nextBotStatus
+      nextBotStatus,
+      nextLogs.entries,
+      nextLogs.source_file ?? null
     );
   }
 
@@ -158,10 +241,18 @@ export function AppSessionProvider({
         error instanceof ApiError &&
         error.status === 401
       ) {
+        const fallbackTradingProfile =
+          getTradingProfileOption(
+            session?.trading_profile.id ??
+              botStatus?.session.trading_profile.id ??
+              initialConnectionState.tradingProfile
+          );
+
         startTransition(() => {
           setSession({
             authenticated: false,
             terminal_connected: false,
+            trading_profile: fallbackTradingProfile,
           });
           setBotStatus((current) =>
             current
@@ -170,10 +261,13 @@ export function AppSessionProvider({
                   session: {
                     authenticated: false,
                     terminal_connected: false,
+                    trading_profile: fallbackTradingProfile,
                   },
                 }
               : current
           );
+          setLogs([]);
+          setLogSourceFile(null);
         });
         clearAuthedData();
       }
@@ -220,6 +314,7 @@ export function AppSessionProvider({
           account_number: accountNumber,
           password: input.password,
           server: input.server.trim(),
+          trading_profile: input.tradingProfile,
         }
       );
       const nextBotStatus = await api.getBotStatus(normalizedBaseUrl);
@@ -230,6 +325,8 @@ export function AppSessionProvider({
         setAccount(response.account);
         setTrades([]);
         setBotStatus(nextBotStatus);
+        setLogs([]);
+        setLogSourceFile(null);
       });
 
       await refreshAll({ silent: true });
@@ -250,6 +347,8 @@ export function AppSessionProvider({
       startTransition(() => {
         setSession(null);
         setBotStatus(null);
+        setLogs([]);
+        setLogSourceFile(null);
       });
       return;
     }
@@ -262,6 +361,8 @@ export function AppSessionProvider({
       startTransition(() => {
         setSession(response.session);
         setBotStatus(null);
+        setLogs([]);
+        setLogSourceFile(null);
       });
       clearAuthedData();
     } catch (error) {
@@ -341,19 +442,27 @@ export function AppSessionProvider({
   });
 
   useEffect(() => {
+    updatePersistedConnectionState({
+      apiBaseUrl,
+    });
+  }, [apiBaseUrl]);
+
+  useEffect(() => {
     if (hasHydratedOnceRef.current) {
       return;
     }
 
     hasHydratedOnceRef.current = true;
 
-    if (!defaultApiBaseUrl) {
+    const initialApiBaseUrl =
+      initialApiBaseUrlRef.current;
+
+    if (!initialApiBaseUrl) {
+      setIsHydrating(false);
       return;
     }
 
-    setIsHydrating(true);
-
-    void loadSnapshot(defaultApiBaseUrl)
+    void loadSnapshot(initialApiBaseUrl)
       .catch((error) => {
         setErrorMessage(getErrorMessage(error));
       })
@@ -361,6 +470,12 @@ export function AppSessionProvider({
         setIsHydrating(false);
       });
   }, []);
+
+  useEffect(() => {
+    latestTradesRef.current = trades;
+    latestSessionAuthenticatedRef.current =
+      Boolean(session?.authenticated);
+  }, [session?.authenticated, trades]);
 
   useEffect(() => {
     if (!apiBaseUrl) {
@@ -385,12 +500,116 @@ export function AppSessionProvider({
     session?.authenticated,
   ]);
 
+  useEffect(() => {
+    if (!account) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    void appendAccountJournalSnapshot({
+      account,
+      botStatus,
+      trades,
+    })
+      .then((didWrite) => {
+        if (!didWrite || isCancelled) {
+          return;
+        }
+
+        setJournalRevision((current) => current + 1);
+      })
+      .catch(() => {
+        return;
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [account, botStatus, trades]);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") {
+      return;
+    }
+
+    let isCancelled = false;
+
+    void import("expo-draw-over-apps")
+      .then(async (module) => {
+        if (isCancelled) {
+          return;
+        }
+
+        const [{ FloatingTradesWindow }] =
+          await Promise.all([
+            import("@/components/floating-trades-window"),
+          ]);
+
+        if (isCancelled) {
+          return;
+        }
+
+        overlayModuleRef.current = module;
+        module.setBubbleRendererForBubble(
+          TRADE_OVERLAY_BUBBLE_ID,
+          FloatingTradesWindow
+        );
+        module.setBubbleCount(
+          latestTradesRef.current.length,
+          "app",
+          TRADE_OVERLAY_BUBBLE_ID
+        );
+
+        if (!latestSessionAuthenticatedRef.current) {
+          module.hideBubble(TRADE_OVERLAY_BUBBLE_ID);
+        }
+      })
+      .catch(() => {
+        overlayModuleRef.current = null;
+      });
+
+    return () => {
+      isCancelled = true;
+      overlayModuleRef.current?.setBubbleRendererForBubble(
+        TRADE_OVERLAY_BUBBLE_ID,
+        null
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    updateTradeOverlaySnapshot({
+      account,
+      trades,
+    });
+
+    overlayModuleRef.current?.setBubbleCount(
+      trades.length,
+      "app",
+      TRADE_OVERLAY_BUBBLE_ID
+    );
+  }, [account, trades]);
+
+  useEffect(() => {
+    if (session?.authenticated) {
+      return;
+    }
+
+    overlayModuleRef.current?.hideBubble(
+      TRADE_OVERLAY_BUBBLE_ID
+    );
+  }, [session?.authenticated]);
+
   const value: AppSessionContextValue = {
     apiBaseUrl,
     session,
     account,
     trades,
     botStatus,
+    logs,
+    logSourceFile,
+    journalRevision,
     errorMessage,
     isHydrating,
     isRefreshing,

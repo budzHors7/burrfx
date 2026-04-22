@@ -45,6 +45,9 @@ from trading.strategy_engine import (
     get_strategy_cycle_timeframe_label,
     get_strategy_overview_lines
 )
+from trading.trading_settings import (
+    get_trading_profile_label
+)
 
 
 def _notify_status(
@@ -1027,6 +1030,7 @@ def display_dashboard(
     session_status = get_active_session_label()
     active_symbols = get_session_symbols(verbose=False)
     strategy_lines = get_strategy_overview_lines()
+    trading_profile = get_trading_profile_label()
     trade_status = (
         "LOCKED"
         if is_trading_locked()
@@ -1055,6 +1059,7 @@ def display_dashboard(
     print(f"Target Remaining: {remaining:.2f}")
     print(f"Loss Buffer: {loss_buffer:.2f}")
     print(f"\nSTATUS: {trade_status}")
+    print(f"Profile: {trading_profile}")
     print(f"Session: {session_status}")
     print(f"Symbols: {', '.join(active_symbols) if active_symbols else 'None'}")
     print(

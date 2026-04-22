@@ -85,7 +85,7 @@ MAX_SPREAD_POINTS = 30
 # Broker time
 # =========================
 
-ENABLE_SESSION_FILTER = True
+ENABLE_SESSION_FILTER = False
 
 LONDON_SESSION = {
     "start": 8,

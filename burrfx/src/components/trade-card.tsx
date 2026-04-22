@@ -1,7 +1,11 @@
 import { Text, View } from "react-native";
 
-import { formatPrice, formatSignedCurrency, formatTimestamp } from "@/lib/format";
-import { palette } from "@/lib/theme";
+import { useAppTheme } from "@/hooks/use-app-theme";
+import {
+  formatPrice,
+  formatSignedCurrency,
+  formatTimestamp,
+} from "@/lib/format";
 import type { OpenTradeItem } from "@/types/api";
 import { StatusPill } from "@/components/status-pill";
 
@@ -14,6 +18,7 @@ export function TradeCard({
   trade,
   currency,
 }: TradeCardProps) {
+  const { colors } = useAppTheme();
   const pnl = trade.profit ?? 0;
   const tone =
     pnl > 0 ? "positive" : pnl < 0 ? "negative" : "neutral";
@@ -25,10 +30,10 @@ export function TradeCard({
         borderRadius: 26,
         borderCurve: "continuous",
         borderWidth: 1,
-        borderColor: palette.borderSoft,
-        backgroundColor: "rgba(11, 32, 50, 0.92)",
+        borderColor: colors.borderSoft,
+        backgroundColor: colors.panel,
         padding: 18,
-        boxShadow: "0 16px 36px rgba(2, 12, 22, 0.22)",
+        boxShadow: colors.shadowMd,
       }}
     >
       <View
@@ -43,7 +48,7 @@ export function TradeCard({
           <Text
             selectable
             style={{
-              color: palette.text,
+              color: colors.text,
               fontSize: 22,
               fontWeight: "800",
               letterSpacing: 0.3,
@@ -54,12 +59,12 @@ export function TradeCard({
           <Text
             selectable
             style={{
-              color: palette.textMuted,
+              color: colors.textMuted,
               fontSize: 14,
               fontWeight: "600",
             }}
           >
-            Ticket #{trade.ticket} · {trade.volume.toFixed(2)} lot
+            Ticket #{trade.ticket} - {trade.volume.toFixed(2)} lot
           </Text>
         </View>
         <View style={{ alignItems: "flex-end", gap: 8 }}>
@@ -102,7 +107,7 @@ export function TradeCard({
           justifyContent: "space-between",
           gap: 12,
           borderTopWidth: 1,
-          borderTopColor: palette.borderSoft,
+          borderTopColor: colors.borderSoft,
           paddingTop: 14,
         }}
       >
@@ -110,7 +115,7 @@ export function TradeCard({
           <Text
             selectable
             style={{
-              color: palette.textDim,
+              color: colors.textDim,
               fontSize: 12,
               fontWeight: "600",
               textTransform: "uppercase",
@@ -122,7 +127,7 @@ export function TradeCard({
           <Text
             selectable
             style={{
-              color: palette.text,
+              color: colors.text,
               fontSize: 15,
               fontWeight: "600",
             }}
@@ -134,7 +139,7 @@ export function TradeCard({
           <Text
             selectable
             style={{
-              color: palette.textDim,
+              color: colors.textDim,
               fontSize: 12,
               fontWeight: "600",
               textTransform: "uppercase",
@@ -148,10 +153,10 @@ export function TradeCard({
             style={{
               color:
                 tone === "positive"
-                  ? palette.success
+                  ? colors.success
                   : tone === "negative"
-                    ? palette.danger
-                    : palette.text,
+                    ? colors.danger
+                    : colors.text,
               fontSize: 18,
               fontWeight: "800",
               fontVariant: ["tabular-nums"],
@@ -172,6 +177,8 @@ function TradeMetric({
   label: string;
   value: string;
 }) {
+  const { colors } = useAppTheme();
+
   return (
     <View
       style={{
@@ -183,7 +190,7 @@ function TradeMetric({
       <Text
         selectable
         style={{
-          color: palette.textDim,
+          color: colors.textDim,
           fontSize: 12,
           fontWeight: "600",
           textTransform: "uppercase",
@@ -195,7 +202,7 @@ function TradeMetric({
       <Text
         selectable
         style={{
-          color: palette.text,
+          color: colors.text,
           fontSize: 16,
           fontWeight: "700",
           fontVariant: ["tabular-nums"],

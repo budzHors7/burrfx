@@ -15,8 +15,13 @@ from server.app.schemas.auth import (
     AuthLogoutResponse,
     AuthSessionResponse,
 )
+from server.app.schemas.trading_profile import TradingProfileResponse
 from server.app.schemas.trades import OpenTradeItem, OpenTradesResponse
 from trading.account import get_account_info
+from trading.trading_settings import (
+    get_trading_profile_summary,
+    set_trading_profile,
+)
 
 
 class MT5SessionError(RuntimeError):
@@ -49,6 +54,16 @@ class MT5SessionService:
 
     def login(self, payload: AuthLoginRequest) -> AuthLoginResponse:
         with self._lock:
+            try:
+                requested_profile = get_trading_profile_summary(
+                    payload.trading_profile
+                )
+            except ValueError as exc:
+                raise MT5ApiError(
+                    "Unknown trading profile requested.",
+                    status.HTTP_400_BAD_REQUEST,
+                ) from exc
+
             self._shutdown_safely()
 
             password = payload.password.get_secret_value()
@@ -129,6 +144,19 @@ class MT5SessionService:
                     status.HTTP_502_BAD_GATEWAY,
                 )
 
+            try:
+                active_profile = set_trading_profile(
+                    requested_profile["id"]
+                )
+            except OSError as exc:
+                self._set_last_error_exception(exc)
+                self._shutdown_safely()
+                self._clear_auth_state(keep_last_error=True)
+                raise MT5ApiError(
+                    "Trading profile could not be saved on the server.",
+                    status.HTTP_500_INTERNAL_SERVER_ERROR,
+                ) from exc
+
             self._state.authenticated = True
             self._state.account_number = int(account.login)
             self._state.server = str(account.server)
@@ -139,7 +167,10 @@ class MT5SessionService:
 
             return AuthLoginResponse(
                 message="MT5 login successful.",
-                session=self._build_session_response(True),
+                session=self._build_session_response(
+                    True,
+                    trading_profile=active_profile,
+                ),
                 account=self._build_account_overview(account),
             )
 
@@ -207,9 +238,13 @@ class MT5SessionService:
         self,
         authenticated: bool,
         terminal_connected: bool | None = None,
+        trading_profile: dict[str, object] | None = None,
     ) -> AuthSessionResponse:
         if terminal_connected is None:
             terminal_connected = self._current_account_info() is not None
+
+        if trading_profile is None:
+            trading_profile = get_trading_profile_summary()
 
         return AuthSessionResponse(
             authenticated=authenticated,
@@ -220,6 +255,9 @@ class MT5SessionService:
             terminal_connected=terminal_connected,
             last_error_code=self._state.last_error_code,
             last_error_message=self._state.last_error_message,
+            trading_profile=self._build_trading_profile_response(
+                trading_profile
+            ),
         )
 
     def _build_account_overview(self, account: object) -> AccountOverviewResponse:
@@ -361,6 +399,30 @@ class MT5SessionService:
 
         text = str(value).strip()
         return text or None
+
+    def _build_trading_profile_response(
+        self,
+        trading_profile: dict[str, object],
+    ) -> TradingProfileResponse:
+        return TradingProfileResponse(
+            id=str(trading_profile["id"]),
+            label=str(trading_profile["label"]),
+            description=str(trading_profile["description"]),
+            lot_mode=str(trading_profile["lot_mode"]),
+            risk_percent=float(trading_profile["risk_percent"]),
+            max_spread_points=int(
+                trading_profile["max_spread_points"]
+            ),
+            use_take_profit=bool(
+                trading_profile["use_take_profit"]
+            ),
+            use_break_even=bool(
+                trading_profile["use_break_even"]
+            ),
+            use_trailing_stop=bool(
+                trading_profile["use_trailing_stop"]
+            ),
+        )
 
 
 mt5_service = MT5SessionService()

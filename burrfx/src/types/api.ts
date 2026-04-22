@@ -1,3 +1,20 @@
+export type TradingProfileId =
+  | "smart_risk"
+  | "regular_risk"
+  | "highly_risky";
+
+export type TradingProfileOption = {
+  id: TradingProfileId;
+  label: string;
+  description: string;
+  lot_mode: string;
+  risk_percent: number;
+  max_spread_points: number;
+  use_take_profit: boolean;
+  use_break_even: boolean;
+  use_trailing_stop: boolean;
+};
+
 export type AuthSessionResponse = {
   authenticated: boolean;
   account_number?: number | null;
@@ -7,6 +24,7 @@ export type AuthSessionResponse = {
   terminal_connected: boolean;
   last_error_code?: number | null;
   last_error_message?: string | null;
+  trading_profile: TradingProfileOption;
 };
 
 export type AccountOverviewResponse = {
@@ -24,10 +42,26 @@ export type AccountOverviewResponse = {
   company?: string | null;
 };
 
+export type AccountLogEntry = {
+  timestamp?: string | null;
+  level: string;
+  event: string;
+  message: string;
+  context?: Record<string, unknown> | null;
+  source?: string | null;
+};
+
+export type AccountLogsResponse = {
+  count: number;
+  source_file?: string | null;
+  entries: AccountLogEntry[];
+};
+
 export type AuthLoginPayload = {
   account_number: number;
   password: string;
   server: string;
+  trading_profile: TradingProfileId;
 };
 
 export type AuthLoginResponse = {

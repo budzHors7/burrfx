@@ -1,6 +1,6 @@
 import { Stack } from "expo-router";
 
-export default function DashboardStackLayout() {
+export default function LogsStackLayout() {
   return (
     <Stack
       screenOptions={{
@@ -8,9 +8,9 @@ export default function DashboardStackLayout() {
       }}
     >
       <Stack.Screen
-        name="dashboard"
+        name="logs"
         options={{
-          title: "Dashboard",
+          title: "Logs",
         }}
       />
     </Stack>

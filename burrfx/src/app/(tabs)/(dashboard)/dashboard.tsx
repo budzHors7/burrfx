@@ -1,10 +1,18 @@
 import { useRouter } from "expo-router";
-import { ScrollView, Text, View } from "react-native";
+import {
+  ScrollView,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 
 import { ActionButton } from "@/components/action-button";
 import { MetricCard } from "@/components/metric-card";
+import { PageHeading } from "@/components/page-heading";
 import { StatusPill } from "@/components/status-pill";
+import { ThemeModePicker } from "@/components/theme-mode-picker";
 import { useAppSession } from "@/hooks/use-app-session";
+import { useAppTheme } from "@/hooks/use-app-theme";
 import {
   formatCountdown,
   formatCurrency,
@@ -12,10 +20,11 @@ import {
   formatSignedCurrency,
   formatTimestamp,
 } from "@/lib/format";
-import { palette } from "@/lib/theme";
 
 export default function DashboardScreen() {
   const router = useRouter();
+  const { colors } = useAppTheme();
+  const { height } = useWindowDimensions();
   const {
     account,
     botStatus,
@@ -25,6 +34,7 @@ export default function DashboardScreen() {
     isSubmitting,
     logout,
     refreshAll,
+    session,
     startBot,
     stopBot,
   } = useAppSession();
@@ -37,81 +47,68 @@ export default function DashboardScreen() {
       : botStatus?.state === "stopping"
         ? "warning"
         : "neutral";
+  const activeTradingProfile =
+    botStatus?.session.trading_profile ??
+    session?.trading_profile;
 
   return (
     <ScrollView
       contentContainerStyle={{
+        flexGrow: 1,
+        minHeight: height,
         paddingHorizontal: 18,
-        paddingTop: 20,
+        paddingTop: 24,
         paddingBottom: 36,
         gap: 18,
-        backgroundColor: palette.background,
+        backgroundColor: colors.background,
       }}
       contentInsetAdjustmentBehavior="automatic"
     >
-      <View
-        style={{
-          gap: 18,
-        }}
-      >
+      <View style={{ gap: 18 }}>
+        <PageHeading
+          accessory={
+            <StatusPill
+              label={botStatus?.state ?? "Stopped"}
+              tone={statusTone}
+            />
+          }
+          description="Monitor your connected MT5 account, control the bot runtime, and switch between system, light, and dark appearance."
+          eyebrow="Authenticated"
+          title="Dashboard"
+        />
+
         <View
           style={{
             gap: 16,
             borderRadius: 30,
             borderCurve: "continuous",
-            backgroundColor: palette.surface,
+            backgroundColor: colors.surface,
             padding: 20,
-            boxShadow: "0 24px 52px rgba(2, 12, 22, 0.28)",
+            boxShadow: colors.shadowLg,
           }}
         >
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "flex-start",
-              justifyContent: "space-between",
-              gap: 16,
-            }}
-          >
-            <View style={{ flex: 1, gap: 10 }}>
-              <Text
-                selectable
-                style={{
-                  color: palette.textDim,
-                  fontSize: 13,
-                  fontWeight: "700",
-                  letterSpacing: 0.8,
-                  textTransform: "uppercase",
-                }}
-              >
-                Live account control
-              </Text>
-              <Text
-                selectable
-                style={{
-                  color: palette.text,
-                  fontSize: 28,
-                  lineHeight: 32,
-                  fontWeight: "900",
-                }}
-              >
-                BurrFx server heartbeat and bot controls.
-              </Text>
-              <Text
-                selectable
-                style={{
-                  color: palette.textMuted,
-                  fontSize: 15,
-                  lineHeight: 22,
-                }}
-              >
-                Keep an eye on the connected account, refresh the session, and
-                start or stop the trading engine from one place.
-              </Text>
-            </View>
-            <StatusPill
-              label={botStatus?.state ?? "Stopped"}
-              tone={statusTone}
-            />
+          <View style={{ gap: 6 }}>
+            <Text
+              selectable
+              style={{
+                color: colors.text,
+                fontSize: 22,
+                fontWeight: "800",
+              }}
+            >
+              Account overview
+            </Text>
+            <Text
+              selectable
+              style={{
+                color: colors.textMuted,
+                fontSize: 14,
+                lineHeight: 20,
+              }}
+            >
+              These live values come directly from the BurrFx API session that
+              is holding the MT5 connection for this account.
+            </Text>
           </View>
 
           <View
@@ -128,21 +125,21 @@ export default function DashboardScreen() {
             <MetricCard
               label="Equity"
               value={formatCurrency(account?.equity, currency)}
-              accent={palette.success}
+              accent={colors.success}
             />
             <MetricCard
               label="Floating PnL"
               value={formatSignedCurrency(account?.profit, currency)}
               accent={
                 (account?.profit ?? 0) >= 0
-                  ? palette.success
-                  : palette.danger
+                  ? colors.success
+                  : colors.danger
               }
             />
             <MetricCard
               label="Free Margin"
               value={formatCurrency(account?.free_margin, currency)}
-              accent={palette.warning}
+              accent={colors.warning}
             />
           </View>
         </View>
@@ -153,10 +150,10 @@ export default function DashboardScreen() {
             borderRadius: 30,
             borderCurve: "continuous",
             borderWidth: 1,
-            borderColor: palette.borderSoft,
-            backgroundColor: "rgba(11, 32, 50, 0.92)",
+            borderColor: colors.borderSoft,
+            backgroundColor: colors.panel,
             padding: 20,
-            boxShadow: "0 22px 48px rgba(2, 12, 22, 0.26)",
+            boxShadow: colors.shadowLg,
           }}
         >
           <View
@@ -172,7 +169,7 @@ export default function DashboardScreen() {
               <Text
                 selectable
                 style={{
-                  color: palette.text,
+                  color: colors.text,
                   fontSize: 22,
                   fontWeight: "800",
                 }}
@@ -182,13 +179,13 @@ export default function DashboardScreen() {
               <Text
                 selectable
                 style={{
-                  color: palette.textMuted,
+                  color: colors.textMuted,
                   fontSize: 14,
                   lineHeight: 20,
                 }}
               >
-                Status comes directly from the API bot controller you built on
-                the server.
+                Start, stop, refresh, and inspect the live runtime information
+                coming from the server-side controller.
               </Text>
             </View>
             <StatusPill
@@ -211,6 +208,12 @@ export default function DashboardScreen() {
               value={botStatus?.session_label ?? "--"}
             />
             <DetailRow
+              label="Trading profile"
+              value={
+                activeTradingProfile?.label ?? "--"
+              }
+            />
+            <DetailRow
               label="Countdown"
               value={formatCountdown(botStatus?.countdown_seconds)}
             />
@@ -221,10 +224,6 @@ export default function DashboardScreen() {
             <DetailRow
               label="Last update"
               value={formatTimestamp(botStatus?.last_update_at)}
-            />
-            <DetailRow
-              label="API URL"
-              value={apiBaseUrl || "--"}
             />
           </View>
 
@@ -276,7 +275,7 @@ export default function DashboardScreen() {
             </View>
             <View style={{ minWidth: "47%", flexGrow: 1 }}>
               <ActionButton
-                label="Disconnect"
+                label="Sign Out"
                 variant="secondary"
                 loading={isSubmitting && !botStatus?.running}
                 onPress={() => {
@@ -295,26 +294,48 @@ export default function DashboardScreen() {
 
         <View
           style={{
-            gap: 16,
+            gap: 18,
             borderRadius: 30,
             borderCurve: "continuous",
             borderWidth: 1,
-            borderColor: palette.borderSoft,
-            backgroundColor: "rgba(7, 24, 38, 0.95)",
+            borderColor: colors.borderSoft,
+            backgroundColor: colors.panelMuted,
             padding: 20,
-            boxShadow: "0 20px 44px rgba(2, 12, 22, 0.24)",
+            boxShadow: colors.shadowMd,
           }}
         >
-          <Text
-            selectable
+          <View style={{ gap: 6 }}>
+            <Text
+              selectable
+              style={{
+                color: colors.text,
+                fontSize: 22,
+                fontWeight: "800",
+              }}
+            >
+              Appearance and connection
+            </Text>
+            <Text
+              selectable
+              style={{
+                color: colors.textMuted,
+                fontSize: 14,
+                lineHeight: 20,
+              }}
+            >
+              Pick the app theme you want, then review the account and server
+              details for the active session.
+            </Text>
+          </View>
+
+          <ThemeModePicker />
+
+          <View
             style={{
-              color: palette.text,
-              fontSize: 22,
-              fontWeight: "800",
+              height: 1,
+              backgroundColor: colors.borderSoft,
             }}
-          >
-            Account snapshot
-          </Text>
+          />
 
           <View style={{ gap: 12 }}>
             <DetailRow
@@ -324,6 +345,12 @@ export default function DashboardScreen() {
             <DetailRow
               label="Broker server"
               value={account?.server ?? "--"}
+            />
+            <DetailRow
+              label="Trading settings"
+              value={
+                activeTradingProfile?.label ?? "--"
+              }
             />
             <DetailRow
               label="Currency"
@@ -350,6 +377,10 @@ export default function DashboardScreen() {
               label="Company"
               value={account?.company ?? "--"}
             />
+            <DetailRow
+              label="API URL"
+              value={apiBaseUrl || "--"}
+            />
           </View>
         </View>
 
@@ -359,14 +390,14 @@ export default function DashboardScreen() {
               gap: 8,
               borderRadius: 22,
               borderCurve: "continuous",
-              backgroundColor: "rgba(255, 95, 109, 0.12)",
+              backgroundColor: colors.errorBackground,
               padding: 18,
             }}
           >
             <Text
               selectable
               style={{
-                color: palette.danger,
+                color: colors.danger,
                 fontSize: 13,
                 fontWeight: "700",
                 textTransform: "uppercase",
@@ -378,7 +409,7 @@ export default function DashboardScreen() {
             <Text
               selectable
               style={{
-                color: palette.text,
+                color: colors.text,
                 fontSize: 14,
                 lineHeight: 20,
               }}
@@ -399,6 +430,8 @@ function DetailRow({
   label: string;
   value: string;
 }) {
+  const { colors } = useAppTheme();
+
   return (
     <View
       style={{
@@ -407,14 +440,14 @@ function DetailRow({
         justifyContent: "space-between",
         gap: 12,
         borderBottomWidth: 1,
-        borderBottomColor: palette.borderSoft,
+        borderBottomColor: colors.borderSoft,
         paddingBottom: 10,
       }}
     >
       <Text
         selectable
         style={{
-          color: palette.textDim,
+          color: colors.textDim,
           fontSize: 13,
           fontWeight: "600",
           textTransform: "uppercase",
@@ -428,7 +461,7 @@ function DetailRow({
         style={{
           flex: 1,
           textAlign: "right",
-          color: palette.text,
+          color: colors.text,
           fontSize: 15,
           fontWeight: "600",
         }}

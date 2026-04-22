@@ -4,7 +4,6 @@ from datetime import datetime
 
 from config import (
     SYMBOLS,
-    MAX_SPREAD_POINTS,
     ENABLE_SESSION_FILTER,
     LONDON_SESSION,
     NEWYORK_SESSION,
@@ -14,6 +13,9 @@ from config import (
     ROLLOVER_BUFFER_MINUTES
 )
 from trading.debug_logger import log_event
+from trading.trading_settings import (
+    get_trading_settings
+)
 
 
 # =========================
@@ -23,12 +25,17 @@ from trading.debug_logger import log_event
 def check_spread(symbol):
 
     tick = mt5.symbol_info_tick(symbol)
+    settings = get_trading_settings()
+    max_spread_points = settings[
+        "max_spread_points"
+    ]
 
     if tick is None:
         log_event(
             "spread_check_failed",
             level="warning",
             symbol=symbol,
+            profile=settings["id"],
             reason="tick_unavailable"
         )
         return False
@@ -40,6 +47,7 @@ def check_spread(symbol):
             "spread_check_failed",
             level="warning",
             symbol=symbol,
+            profile=settings["id"],
             reason="symbol_info_unavailable"
         )
         return False
@@ -49,7 +57,7 @@ def check_spread(symbol):
         / symbol_info.point
     )
 
-    if spread > MAX_SPREAD_POINTS:
+    if spread > max_spread_points:
 
         print(
             f"{symbol}: Spread too high "
@@ -60,8 +68,9 @@ def check_spread(symbol):
             "spread_check_failed",
             level="warning",
             symbol=symbol,
+            profile=settings["id"],
             spread=spread,
-            max_spread=MAX_SPREAD_POINTS
+            max_spread=max_spread_points
         )
 
         return False
@@ -74,8 +83,9 @@ def check_spread(symbol):
     log_event(
         "spread_check_passed",
         symbol=symbol,
+        profile=settings["id"],
         spread=spread,
-        max_spread=MAX_SPREAD_POINTS
+        max_spread=max_spread_points
     )
 
     return True

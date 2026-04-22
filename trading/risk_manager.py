@@ -1,11 +1,14 @@
+import math
+
 import MetaTrader5 as mt5
 
 from config import (
-    INITIAL_BALANCE,
-    RISK_PERCENT,
-    SL_ATR_MULTIPLIER
+    INITIAL_BALANCE
 )
 from trading.debug_logger import log_event
+from trading.trading_settings import (
+    get_trading_settings
+)
 
 
 def _is_positive_number(value):
@@ -14,6 +17,78 @@ def _is_positive_number(value):
         value,
         (int, float)
     ) and value > 0
+
+
+def _get_volume_precision(step):
+
+    normalized_step = (
+        f"{float(step):.8f}"
+        .rstrip("0")
+        .rstrip(".")
+    )
+
+    if "." not in normalized_step:
+        return 0
+
+    return len(
+        normalized_step.split(".")[1]
+    )
+
+
+def _normalize_volume(
+    volume,
+    min_lot,
+    max_lot,
+    step
+):
+
+    normalized_step = (
+        float(step)
+        if _is_positive_number(step)
+        else (
+            float(min_lot)
+            if _is_positive_number(min_lot)
+            else 0.01
+        )
+    )
+    normalized_min_lot = (
+        float(min_lot)
+        if _is_positive_number(min_lot)
+        else normalized_step
+    )
+    normalized_max_lot = (
+        float(max_lot)
+        if _is_positive_number(max_lot)
+        else max(
+            normalized_min_lot,
+            float(volume)
+        )
+    )
+    capped_volume = max(
+        normalized_min_lot,
+        min(
+            normalized_max_lot,
+            float(volume)
+        )
+    )
+    stepped_volume = math.floor(
+        (capped_volume + 1e-12)
+        / normalized_step
+    ) * normalized_step
+    precision = _get_volume_precision(
+        normalized_step
+    )
+
+    return round(
+        max(
+            normalized_min_lot,
+            min(
+                normalized_max_lot,
+                stepped_volume
+            )
+        ),
+        precision
+    )
 
 
 def _resolve_sizing_balance(
@@ -114,12 +189,14 @@ def calculate_lot_size(
     """
 
     symbol_info = mt5.symbol_info(symbol)
+    settings = get_trading_settings()
 
     if symbol_info is None:
         log_event(
             "lot_size_defaulted",
             level="warning",
             symbol=symbol,
+            profile=settings["id"],
             reason="symbol_info_unavailable",
             fallback_lot=0.01
         )
@@ -127,18 +204,47 @@ def calculate_lot_size(
 
     tick_value = symbol_info.trade_tick_value
     tick_size = symbol_info.trade_tick_size
+    min_lot = symbol_info.volume_min
+    max_lot = symbol_info.volume_max
+    step = symbol_info.volume_step
 
     if tick_value == 0 or tick_size == 0:
         log_event(
             "lot_size_defaulted",
             level="warning",
             symbol=symbol,
+            profile=settings["id"],
             tick_value=tick_value,
             tick_size=tick_size,
             reason="invalid_tick_value_or_size",
             fallback_lot=0.01
         )
         return 0.01
+
+    if settings["lot_mode"] == "min":
+        final_lot = _normalize_volume(
+            min_lot,
+            min_lot,
+            max_lot,
+            step
+        )
+
+        log_event(
+            "lot_size_calculated",
+            symbol=symbol,
+            atr=atr,
+            account_balance=account_balance,
+            account_equity=account_equity,
+            deposit_reference=reference_deposit,
+            profile=settings["id"],
+            lot_mode=settings["lot_mode"],
+            min_lot=min_lot,
+            max_lot=max_lot,
+            step=step,
+            final_lot=final_lot
+        )
+
+        return final_lot
 
     # =========================
     # Risk amount
@@ -156,6 +262,7 @@ def calculate_lot_size(
             "lot_size_defaulted",
             level="warning",
             symbol=symbol,
+            profile=settings["id"],
             account_balance=account_balance,
             account_equity=account_equity,
             reference_deposit=reference_deposit,
@@ -166,7 +273,7 @@ def calculate_lot_size(
 
     risk_amount = (
         sizing_balance
-        * (RISK_PERCENT / 100)
+        * (settings["risk_percent"] / 100)
     )
 
     # =========================
@@ -175,18 +282,19 @@ def calculate_lot_size(
 
     stop_distance = (
         atr
-        * SL_ATR_MULTIPLIER
+        * settings["sl_atr_multiplier"]
     )
 
     # Convert to ticks
 
     ticks = stop_distance / tick_size
 
-    if ticks == 0:
+    if ticks <= 0:
         log_event(
             "lot_size_defaulted",
             level="warning",
             symbol=symbol,
+            profile=settings["id"],
             stop_distance=stop_distance,
             tick_size=tick_size,
             reason="zero_ticks",
@@ -207,18 +315,12 @@ def calculate_lot_size(
     # Normalize lot
     # =========================
 
-    min_lot = symbol_info.volume_min
-    max_lot = symbol_info.volume_max
-    step = symbol_info.volume_step
-
-    lot = max(min_lot, lot)
-    lot = min(max_lot, lot)
-
-    lot = round(
-        lot / step
-    ) * step
-
-    final_lot = round(lot, 2)
+    final_lot = _normalize_volume(
+        lot,
+        min_lot,
+        max_lot,
+        step
+    )
 
     log_event(
         "lot_size_calculated",
@@ -227,10 +329,14 @@ def calculate_lot_size(
         account_balance=account_balance,
         account_equity=account_equity,
         deposit_reference=sizing_context["deposit_reference"],
+        profile=settings["id"],
+        lot_mode=settings["lot_mode"],
         sizing_source=sizing_context["source"],
         sizing_balance=sizing_balance,
         equity_multiplier=sizing_context["equity_multiplier"],
+        risk_percent=settings["risk_percent"],
         risk_amount=risk_amount,
+        sl_atr_multiplier=settings["sl_atr_multiplier"],
         stop_distance=stop_distance,
         ticks=ticks,
         min_lot=min_lot,

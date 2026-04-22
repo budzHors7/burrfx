@@ -1,6 +1,6 @@
 import { Text, View } from "react-native";
 
-import { palette } from "@/lib/theme";
+import { useAppTheme } from "@/hooks/use-app-theme";
 
 type StatusTone = "positive" | "warning" | "negative" | "neutral";
 
@@ -13,23 +13,25 @@ export function StatusPill({
   label,
   tone = "neutral",
 }: StatusPillProps) {
+  const { colors } = useAppTheme();
+
   const backgroundColor =
     tone === "positive"
-      ? palette.successSoft
+      ? colors.successSoft
       : tone === "warning"
-        ? palette.warningSoft
+        ? colors.warningSoft
         : tone === "negative"
-          ? palette.dangerSoft
-          : palette.surfaceRaised;
+          ? colors.dangerSoft
+          : colors.surfaceRaised;
 
   const textColor =
     tone === "positive"
-      ? "#0f8052"
+      ? colors.success
       : tone === "warning"
-        ? "#8c6112"
+        ? colors.warning
         : tone === "negative"
-          ? "#b73c4d"
-          : palette.textMuted;
+          ? colors.danger
+          : colors.textMuted;
 
   return (
     <View

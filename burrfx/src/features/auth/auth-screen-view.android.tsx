@@ -1,29 +1,25 @@
+import { useState } from "react";
 import {
-  Button,
-  Column,
-  Host,
-  LazyColumn,
-  OutlinedCard,
-  OutlinedTextField,
-  Surface,
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
   Text,
-} from "@expo/ui/jetpack-compose";
-import {
-  background,
-  fillMaxSize,
-  fillMaxWidth,
-  imePadding,
-  paddingAll,
-} from "@expo/ui/jetpack-compose/modifiers";
+  View,
+  useWindowDimensions,
+} from "react-native";
 
-import { palette } from "@/lib/theme";
+import { ActionButton } from "@/components/action-button";
+import { FormField } from "@/components/form-field";
 import type { AuthScreenViewProps } from "@/features/auth/auth-screen.types";
+import { useAppTheme } from "@/hooks/use-app-theme";
 
 export function AuthScreenView({
   apiUrl,
   accountNumber,
   password,
   server,
+  tradingProfile,
+  tradingProfileOptions,
   errorMessage,
   isHydrating,
   isSubmitting,
@@ -31,256 +27,397 @@ export function AuthScreenView({
   onAccountNumberChange,
   onPasswordChange,
   onServerChange,
+  onTradingProfileChange,
+  onDismissError,
   onSubmit,
 }: AuthScreenViewProps) {
+  const { colors } = useAppTheme();
+  const { height } = useWindowDimensions();
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const selectedProfile =
+    tradingProfileOptions.find(
+      (option) => option.id === tradingProfile
+    ) ?? tradingProfileOptions[1];
+
   return (
-    <Host
-      colorScheme="dark"
-      ignoreSafeAreaKeyboardInsets
-      style={{ flex: 1 }}
-      useViewportSizeMeasurement
+    <ScrollView
+      contentContainerStyle={{
+        flexGrow: 1,
+        minHeight: height,
+        paddingHorizontal: 20,
+        paddingTop: 26,
+        paddingBottom: 28,
+        backgroundColor: colors.background,
+      }}
+      contentInsetAdjustmentBehavior="automatic"
+      keyboardShouldPersistTaps="handled"
     >
-      <LazyColumn
-        contentPadding={{
-          top: 24,
-          bottom: 36,
-          start: 20,
-          end: 20,
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "space-between",
+          gap: 24,
         }}
-        horizontalAlignment="center"
-        modifiers={[
-          fillMaxSize(),
-          background(palette.background),
-          imePadding(),
-        ]}
-        verticalArrangement={{ spacedBy: 16 }}
       >
-        <OutlinedCard
-          border={{ color: palette.borderSoft, width: 1 }}
-          colors={{
-            containerColor: palette.surface,
-            contentColor: palette.text,
+        <View
+          style={{
+            position: "absolute",
+            right: -40,
+            top: 20,
+            height: 220,
+            width: 220,
+            borderRadius: 999,
+            backgroundColor: colors.heroOrbPrimary,
           }}
-          modifiers={[fillMaxWidth()]}
-        >
-          <Column
-            modifiers={[fillMaxWidth(), paddingAll(20)]}
-            verticalArrangement={{ spacedBy: 12 }}
-          >
-            <Text
-              color={palette.accentSoft}
-              style={{
-                fontSize: 12,
-                fontWeight: "700",
-                letterSpacing: 1.1,
-                typography: "labelLarge",
-              }}
-            >
-              BURRFX MOBILE
-            </Text>
-            <Text
-              color={palette.text}
-              style={{
-                fontSize: 32,
-                fontWeight: "800",
-                lineHeight: 36,
-                typography: "headlineMedium",
-              }}
-            >
-              MT5 bot control in your pocket.
-            </Text>
-            <Text
-              color={palette.textMuted}
-              style={{
-                fontSize: 15,
-                lineHeight: 21,
-                typography: "bodyMedium",
-              }}
-            >
-              Sign in through your BurrFx API, let the Windows server open the
-              MT5 session, then move into the dashboard and live trades.
-            </Text>
-          </Column>
-        </OutlinedCard>
-
-        <OutlinedCard
-          border={{ color: palette.borderSoft, width: 1 }}
-          colors={{
-            containerColor: palette.surfaceRaised,
-            contentColor: palette.text,
+        />
+        <View
+          style={{
+            position: "absolute",
+            left: -60,
+            top: 240,
+            height: 180,
+            width: 180,
+            borderRadius: 999,
+            backgroundColor: colors.heroOrbSecondary,
           }}
-          modifiers={[fillMaxWidth()]}
-        >
-          <Column
-            modifiers={[fillMaxWidth(), paddingAll(20)]}
-            verticalArrangement={{ spacedBy: 14 }}
+        />
+
+        <View style={{ gap: 18 }}>
+          <View
+            style={{
+              gap: 18,
+              borderRadius: 30,
+              borderCurve: "continuous",
+              borderWidth: 1,
+              borderColor: colors.borderSoft,
+              backgroundColor: colors.panelMuted,
+              padding: 22,
+              boxShadow: colors.shadowLg,
+            }}
           >
-            <Text
-              color={palette.text}
-              style={{
-                fontWeight: "800",
-                typography: "titleLarge",
-              }}
-            >
-              Sign in to your server
-            </Text>
-            <Text
-              color={palette.textMuted}
-              style={{
-                fontSize: 14,
-                lineHeight: 20,
-                typography: "bodyMedium",
-              }}
-            >
-              The mobile app authenticates with your API first, then the server
-              logs into MetaTrader 5.
-            </Text>
-
-            <OutlinedTextField
-              defaultValue={apiUrl}
-              enabled={!isSubmitting}
-              keyboardOptions={{
-                autoCorrectEnabled: false,
-                capitalization: "none",
-                imeAction: "next",
-                keyboardType: "uri",
-              }}
-              modifiers={[fillMaxWidth()]}
-              onValueChange={onApiUrlChange}
-              singleLine
-            >
-              <OutlinedTextField.Label>
-                <Text>API URL</Text>
-              </OutlinedTextField.Label>
-              <OutlinedTextField.Placeholder>
-                <Text>http://192.168.1.20:8000</Text>
-              </OutlinedTextField.Placeholder>
-              <OutlinedTextField.SupportingText>
-                <Text>Use your Windows server LAN IP instead of localhost.</Text>
-              </OutlinedTextField.SupportingText>
-            </OutlinedTextField>
-
-            <OutlinedTextField
-              defaultValue={accountNumber}
-              enabled={!isSubmitting}
-              keyboardOptions={{
-                autoCorrectEnabled: false,
-                imeAction: "next",
-                keyboardType: "number",
-              }}
-              modifiers={[fillMaxWidth()]}
-              onValueChange={onAccountNumberChange}
-              singleLine
-            >
-              <OutlinedTextField.Label>
-                <Text>Account Number</Text>
-              </OutlinedTextField.Label>
-              <OutlinedTextField.Placeholder>
-                <Text>12345678</Text>
-              </OutlinedTextField.Placeholder>
-            </OutlinedTextField>
-
-            <OutlinedTextField
-              defaultValue={password}
-              enabled={!isSubmitting}
-              keyboardActions={{ onDone: onSubmit }}
-              keyboardOptions={{
-                autoCorrectEnabled: false,
-                imeAction: "next",
-                keyboardType: "password",
-              }}
-              modifiers={[fillMaxWidth()]}
-              onValueChange={onPasswordChange}
-              singleLine
-            >
-              <OutlinedTextField.Label>
-                <Text>Password</Text>
-              </OutlinedTextField.Label>
-              <OutlinedTextField.Placeholder>
-                <Text>MT5 account password</Text>
-              </OutlinedTextField.Placeholder>
-            </OutlinedTextField>
-
-            <OutlinedTextField
-              defaultValue={server}
-              enabled={!isSubmitting}
-              keyboardActions={{ onDone: onSubmit }}
-              keyboardOptions={{
-                autoCorrectEnabled: false,
-                capitalization: "none",
-                imeAction: "done",
-              }}
-              modifiers={[fillMaxWidth()]}
-              onValueChange={onServerChange}
-              singleLine
-            >
-              <OutlinedTextField.Label>
-                <Text>Broker Server</Text>
-              </OutlinedTextField.Label>
-              <OutlinedTextField.Placeholder>
-                <Text>Broker-Demo</Text>
-              </OutlinedTextField.Placeholder>
-            </OutlinedTextField>
-
-            {errorMessage ? (
-              <Surface
-                border={{ color: palette.danger, width: 1 }}
-                color="rgba(255, 95, 109, 0.14)"
-                modifiers={[fillMaxWidth()]}
+            <View style={{ gap: 6 }}>
+              <Text
+                selectable
+                style={{
+                  color: colors.text,
+                  fontSize: 24,
+                  fontWeight: "800",
+                }}
               >
-                <Column
-                  modifiers={[fillMaxWidth(), paddingAll(16)]}
-                  verticalArrangement={{ spacedBy: 6 }}
-                >
-                  <Text
-                    color={palette.dangerSoft}
-                    style={{
-                      fontWeight: "700",
-                      letterSpacing: 0.4,
-                      typography: "labelMedium",
-                    }}
-                  >
-                    CONNECTION ISSUE
-                  </Text>
-                  <Text
-                    color={palette.text}
-                    style={{
-                      fontSize: 14,
-                      lineHeight: 20,
-                      typography: "bodyMedium",
-                    }}
-                  >
-                    {errorMessage}
-                  </Text>
-                </Column>
-              </Surface>
-            ) : null}
-
-            <Button
-              enabled={!isSubmitting}
-              modifiers={[fillMaxWidth()]}
-              onClick={onSubmit}
-            >
-              <Text>
-                {isSubmitting ? "Connecting..." : "Connect and Sign In"}
+                Sign in to your server
               </Text>
-            </Button>
+              <Text
+                selectable
+                style={{
+                  color: colors.textMuted,
+                  fontSize: 14,
+                  lineHeight: 20,
+                }}
+              >
+                The app signs in through your BurrFx API, then the server opens
+                the MT5 session for this device.
+              </Text>
+            </View>
 
+            <FormField
+              autoCapitalize="none"
+              label="API URL"
+              onChangeText={onApiUrlChange}
+              placeholder="http://192.168.1.20:8000"
+              value={apiUrl}
+            />
+            <FormField
+              keyboardType="number-pad"
+              label="Account Number"
+              onChangeText={onAccountNumberChange}
+              placeholder="12345678"
+              value={accountNumber}
+            />
+            <View style={{ gap: 10 }}>
+              <FormField
+                label="Password"
+                onChangeText={onPasswordChange}
+                placeholder="MT5 account password"
+                secureTextEntry={!isPasswordVisible}
+                value={password}
+              />
+              <Pressable
+                accessibilityRole="button"
+                disabled={isSubmitting}
+                onPress={() => {
+                  setIsPasswordVisible((current) => !current);
+                }}
+                style={{
+                  alignSelf: "flex-start",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 10,
+                  opacity: isSubmitting ? 0.5 : 1,
+                }}
+              >
+                <Text
+                  selectable
+                  style={{
+                    color: colors.accent,
+                    fontSize: 13,
+                    fontWeight: "700",
+                  }}
+                >
+                  {isPasswordVisible ? "Hide password" : "Show password"}
+                </Text>
+                <Text
+                  selectable
+                  style={{
+                    color: colors.textDim,
+                    fontSize: 12,
+                    lineHeight: 18,
+                  }}
+                >
+                  Hidden by default.
+                </Text>
+              </Pressable>
+            </View>
+            <View style={{ gap: 12 }}>
+              <Text
+                selectable
+                style={{
+                  color: colors.text,
+                  fontSize: 16,
+                  fontWeight: "800",
+                }}
+              >
+                Trading Settings
+              </Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  gap: 8,
+                  borderRadius: 20,
+                  borderCurve: "continuous",
+                  borderWidth: 1,
+                  borderColor: colors.borderSoft,
+                  backgroundColor: colors.surfaceRaised,
+                  padding: 4,
+                }}
+              >
+                {tradingProfileOptions.map((option) => {
+                  const isSelected =
+                    option.id === tradingProfile;
+
+                  return (
+                    <Pressable
+                      key={option.id}
+                      accessibilityRole="button"
+                      disabled={isSubmitting}
+                      onPress={() => {
+                        onTradingProfileChange(option.id);
+                      }}
+                      style={({ pressed }) => ({
+                        flex: 1,
+                        minHeight: 42,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderRadius: 16,
+                        borderCurve: "continuous",
+                        backgroundColor: isSelected
+                          ? colors.accent
+                          : "transparent",
+                        opacity: pressed ? 0.92 : 1,
+                      })}
+                    >
+                      <Text
+                        selectable
+                        style={{
+                          color: isSelected
+                            ? colors.textOnAccent
+                            : colors.textMuted,
+                          fontSize: 12,
+                          fontWeight: isSelected
+                            ? "800"
+                            : "700",
+                        }}
+                      >
+                        {getTradingProfileSegmentLabel(
+                          option.id
+                        )}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <View
+                style={{
+                  gap: 8,
+                  borderRadius: 18,
+                  borderCurve: "continuous",
+                  borderWidth: 1,
+                  borderColor: colors.borderSoft,
+                  backgroundColor: colors.surfaceRaised,
+                  padding: 14,
+                }}
+              >
+                <Text
+                  selectable
+                  style={{
+                    color: colors.accent,
+                    fontSize: 14,
+                    fontWeight: "800",
+                  }}
+                >
+                  {selectedProfile.label}
+                </Text>
+                <Text
+                  selectable
+                  style={{
+                    color: colors.textMuted,
+                    fontSize: 13,
+                    lineHeight: 18,
+                  }}
+                >
+                  {selectedProfile.description}
+                </Text>
+              </View>
+            </View>
+            <FormField
+              autoCapitalize="none"
+              label="Broker Server"
+              onChangeText={onServerChange}
+              placeholder="Broker-Demo"
+              value={server}
+            />
             <Text
-              color={palette.textDim}
+              selectable
               style={{
+                color: colors.textDim,
                 fontSize: 12,
                 lineHeight: 18,
-                typography: "bodySmall",
               }}
             >
-              {isHydrating
-                ? "Checking the existing server session..."
-                : "Expected backend: Windows Server + MT5 terminal + BurrFx API on port 8000."}
+              MT5 still requires the broker server value for login.
             </Text>
-          </Column>
-        </OutlinedCard>
-      </LazyColumn>
-    </Host>
+
+            {errorMessage ? (
+              <View
+                style={{
+                  gap: 8,
+                  borderRadius: 20,
+                  borderCurve: "continuous",
+                  backgroundColor: colors.errorBackground,
+                  padding: 16,
+                }}
+              >
+                <Text
+                  selectable
+                  style={{
+                    color: colors.danger,
+                    fontSize: 13,
+                    fontWeight: "700",
+                    textTransform: "uppercase",
+                    letterSpacing: 0.4,
+                  }}
+                >
+                  Connection issue
+                </Text>
+                <Text
+                  selectable
+                  style={{
+                    color: colors.text,
+                    fontSize: 14,
+                    lineHeight: 20,
+                  }}
+                >
+                  {errorMessage}
+                </Text>
+              </View>
+            ) : null}
+
+            <ActionButton
+              label={isSubmitting ? "Connecting..." : "Connect and Sign In"}
+              loading={isSubmitting}
+              onPress={onSubmit}
+            />
+
+            <View style={{ gap: 10 }}>
+              <Text
+                selectable
+                style={{
+                  color: colors.textDim,
+                  fontSize: 12,
+                  lineHeight: 18,
+                }}
+              >
+                For a physical device, use your Windows server&apos;s LAN IP
+                instead of `localhost`.
+              </Text>
+              {isHydrating ? (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 10,
+                  }}
+                >
+                  <ActivityIndicator color={colors.accent} />
+                  <Text
+                    selectable
+                    style={{
+                      color: colors.textMuted,
+                      fontSize: 13,
+                    }}
+                  >
+                    Checking the existing server session...
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        </View>
+
+        <Pressable
+          onPress={onDismissError}
+          style={{
+            alignSelf: "flex-start",
+            gap: 6,
+          }}
+        >
+          <Text
+            selectable
+            style={{
+              color: colors.textMuted,
+              fontSize: 12,
+              fontWeight: "700",
+              letterSpacing: 0.6,
+              textTransform: "uppercase",
+            }}
+          >
+            Server expectation
+          </Text>
+          <Text
+            selectable
+            style={{
+              color: colors.textDim,
+              fontSize: 13,
+              lineHeight: 18,
+            }}
+          >
+            Windows Server + MT5 terminal + BurrFx API running on port 8000.
+          </Text>
+        </Pressable>
+      </View>
+    </ScrollView>
   );
+}
+
+function getTradingProfileSegmentLabel(
+  tradingProfileId: string
+) {
+  if (tradingProfileId === "smart_risk") {
+    return "Smart";
+  }
+
+  if (tradingProfileId === "highly_risky") {
+    return "Risky";
+  }
+
+  return "Regular";
 }

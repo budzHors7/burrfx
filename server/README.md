@@ -2,7 +2,7 @@
 
 This folder contains the self-hosted API that connects the existing BurrFx trading engine to the mobile app.
 
-Important design rule:
+Important design rules:
 
 - `app.py` stays untouched as the terminal entrypoint
 - the API reuses shared logic from `trading/`
@@ -10,7 +10,9 @@ Important design rule:
 
 ## What The Server Does
 
-The server opens and manages one MT5 session for the current process, then exposes account state and bot controls over HTTP.
+The server opens and manages one MT5 session for the current process, then exposes account state, logs, and bot controls over HTTP.
+
+The selected trading profile is shared with the original terminal app through `trading_settings.json`, so the API and CLI use the same trading behavior.
 
 Implemented routes:
 
@@ -21,6 +23,7 @@ Implemented routes:
 - `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/session`
 - `GET /api/v1/account/overview`
+- `GET /api/v1/account/logs`
 - `GET /api/v1/trades/open`
 - `GET /api/v1/bot/status`
 - `POST /api/v1/bot/start`
@@ -30,7 +33,8 @@ Current runtime guardrails:
 
 - login and logout are blocked while the bot is running
 - bot control uses a stop event instead of keyboard polling
-- the terminal menu flow is preserved
+- the current process serves one active MT5 account session at a time
+- account logs require an authenticated MT5 session
 
 ## Prerequisites
 
@@ -105,6 +109,7 @@ $body = @{
   account_number = 12345678
   password = "your-password"
   server = "Broker-Demo"
+  trading_profile = "regular_risk"
 } | ConvertTo-Json
 
 Invoke-RestMethod `
@@ -114,10 +119,17 @@ Invoke-RestMethod `
   -Body $body
 ```
 
+Supported profile ids:
+
+- `smart_risk`
+- `regular_risk`
+- `highly_risky`
+
 Then test the protected routes:
 
 ```powershell
 Invoke-RestMethod -Uri "http://localhost:8000/api/v1/account/overview"
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/account/logs"
 Invoke-RestMethod -Uri "http://localhost:8000/api/v1/trades/open"
 Invoke-RestMethod -Uri "http://localhost:8000/api/v1/bot/status"
 ```
@@ -131,10 +143,12 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/v1/bot/stop"
 
 ## Local Testing Notes
 
-- Health and docs endpoints work even before MT5 login succeeds.
-- `auth/login`, `account/overview`, `trades/open`, and bot control require MT5 on the same machine.
-- The current server process is designed around one active MT5 account session at a time.
-- For mobile testing from an emulator or phone, use a reachable IP instead of `localhost`.
+- health and docs endpoints work even before MT5 login succeeds
+- `auth/login`, `account/overview`, `account/logs`, `trades/open`, and bot control require MT5 on the same machine
+- the active trading profile is returned in the session snapshot and is persisted into the same shared trading settings used by the terminal app
+- the mobile app's Logs tab reads `/api/v1/account/logs`
+- the mobile app's Journal tab is local SQLite storage on the device, not a server endpoint
+- for mobile testing from an emulator or phone, use a reachable IP instead of `localhost`
 
 Recommended local values:
 

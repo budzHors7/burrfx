@@ -1,4 +1,5 @@
 import type {
+  AccountLogsResponse,
   AccountOverviewResponse,
   AuthLoginPayload,
   AuthLoginResponse,
@@ -191,6 +192,15 @@ export const api = {
     return requestJson<AccountOverviewResponse>(
       baseUrl,
       "/account/overview"
+    );
+  },
+  getAccountLogs(
+    baseUrl: string,
+    limit = 120
+  ) {
+    return requestJson<AccountLogsResponse>(
+      baseUrl,
+      `/account/logs?limit=${limit}`
     );
   },
   getOpenTrades(baseUrl: string) {

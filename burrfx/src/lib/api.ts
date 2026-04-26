@@ -196,11 +196,17 @@ export const api = {
   },
   getAccountLogs(
     baseUrl: string,
-    limit = 120
+    options?: {
+      limit?: number;
+      offset?: number;
+    }
   ) {
+    const limit = options?.limit ?? 30;
+    const offset = options?.offset ?? 0;
+
     return requestJson<AccountLogsResponse>(
       baseUrl,
-      `/account/logs?limit=${limit}`
+      `/account/logs?limit=${limit}&offset=${offset}`
     );
   },
   getOpenTrades(baseUrl: string) {

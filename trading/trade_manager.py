@@ -166,6 +166,193 @@ def has_open_position(symbol):
     )
 
 
+def _trade_entry_is_allowed(
+    symbol,
+    order_type,
+    price,
+    atr,
+    settings
+):
+
+    positions = mt5.positions_get()
+
+    if positions is None:
+        log_mt5_error(
+            "entry_policy_positions_failed",
+            symbol=symbol
+        )
+        return False, {
+            "reason": "positions_unavailable"
+        }
+
+    bot_positions = [
+        position
+        for position in positions
+        if _is_bot_position(position)
+    ]
+
+    if not bot_positions:
+        return True, {
+            "reason": "first_bot_trade",
+            "bot_position_count": 0
+        }
+
+    account = mt5.account_info()
+
+    if account is None:
+        log_mt5_error(
+            "entry_policy_account_failed",
+            symbol=symbol
+        )
+        return False, {
+            "reason": "account_unavailable",
+            "bot_position_count": len(bot_positions)
+        }
+
+    equity = float(
+        getattr(account, "equity", 0.0)
+        or 0.0
+    )
+
+    if equity <= 0:
+        return False, {
+            "reason": "invalid_equity",
+            "bot_position_count": len(bot_positions),
+            "equity": equity
+        }
+
+    safe_profit_percent = float(
+        settings.get(
+            "safe_floating_profit_percent",
+            2.0
+        )
+    )
+    required_profit = (
+        equity
+        * (safe_profit_percent / 100)
+    )
+    bot_floating_profit = sum(
+        float(
+            getattr(position, "profit", 0.0)
+            or 0.0
+        )
+        for position in bot_positions
+    )
+
+    if bot_floating_profit < required_profit:
+        return False, {
+            "reason": "safe_profit_not_reached",
+            "bot_position_count": len(bot_positions),
+            "bot_floating_profit": bot_floating_profit,
+            "required_profit": required_profit,
+            "equity": equity,
+            "safe_floating_profit_percent": safe_profit_percent
+        }
+
+    symbol_positions = [
+        position
+        for position in bot_positions
+        if getattr(position, "symbol", None) == symbol
+    ]
+
+    if not symbol_positions:
+        return True, {
+            "reason": "safe_profit_new_symbol",
+            "bot_position_count": len(bot_positions),
+            "bot_floating_profit": bot_floating_profit,
+            "required_profit": required_profit,
+            "equity": equity
+        }
+
+    symbol_position_types = [
+        _get_position_type(position)
+        for position in symbol_positions
+    ]
+
+    if any(
+        position_type != order_type
+        for position_type in symbol_position_types
+    ):
+        return False, {
+            "reason": "opposite_symbol_position",
+            "symbol_position_count": len(symbol_positions),
+            "symbol_position_types": symbol_position_types
+        }
+
+    max_positions_per_symbol = int(
+        settings.get(
+            "max_positions_per_symbol",
+            3
+        )
+    )
+
+    if len(symbol_positions) >= max_positions_per_symbol:
+        return False, {
+            "reason": "max_symbol_positions_reached",
+            "symbol_position_count": len(symbol_positions),
+            "max_positions_per_symbol": max_positions_per_symbol
+        }
+
+    addon_spacing_atr = float(
+        settings.get(
+            "addon_spacing_atr",
+            1.0
+        )
+    )
+    spacing_distance = (
+        float(atr or 0.0)
+        * addon_spacing_atr
+    )
+
+    if spacing_distance <= 0:
+        return False, {
+            "reason": "invalid_addon_spacing",
+            "atr": atr,
+            "addon_spacing_atr": addon_spacing_atr
+        }
+
+    latest_position = max(
+        symbol_positions,
+        key=lambda position: float(
+            getattr(position, "time", 0.0)
+            or 0.0
+        )
+    )
+    latest_entry = float(
+        getattr(latest_position, "price_open", 0.0)
+        or 0.0
+    )
+
+    if order_type == "BUY":
+        required_price = latest_entry + spacing_distance
+        spacing_cleared = price >= required_price
+    else:
+        required_price = latest_entry - spacing_distance
+        spacing_cleared = price <= required_price
+
+    if not spacing_cleared:
+        return False, {
+            "reason": "addon_spacing_not_reached",
+            "latest_entry": latest_entry,
+            "price": price,
+            "required_price": required_price,
+            "atr": atr,
+            "addon_spacing_atr": addon_spacing_atr
+        }
+
+    return True, {
+        "reason": "safe_profit_addon",
+        "bot_position_count": len(bot_positions),
+        "symbol_position_count": len(symbol_positions),
+        "bot_floating_profit": bot_floating_profit,
+        "required_profit": required_profit,
+        "equity": equity,
+        "latest_entry": latest_entry,
+        "price": price,
+        "required_price": required_price
+    }
+
+
 # ===================================
 # EXECUTE TRADE
 # ===================================
@@ -194,17 +381,39 @@ def execute_trade(
         strategy_codes=strategy_codes or []
     )
 
-    if has_open_position(symbol):
+    entry_allowed, entry_policy = (
+        _trade_entry_is_allowed(
+            symbol=symbol,
+            order_type=order_type,
+            price=price,
+            atr=atr,
+            settings=settings
+        )
+    )
 
-        print(f"{symbol}: Position already open")
+    if not entry_allowed:
+
+        print(
+            f"{symbol}: Entry skipped "
+            f"({entry_policy['reason']})"
+        )
         log_event(
             "execute_trade_skipped",
             level="warning",
             symbol=symbol,
             profile=settings["id"],
-            reason="position_already_open"
+            reason=entry_policy["reason"],
+            entry_policy=entry_policy
         )
         return None
+
+    log_event(
+        "entry_policy_allowed",
+        symbol=symbol,
+        profile=settings["id"],
+        order_type=order_type,
+        entry_policy=entry_policy
+    )
 
     if order_type == "BUY":
         sl = price - (
@@ -333,25 +542,24 @@ def execute_trade(
 
     request["volume"] = adjusted_lot
 
-    log_event(
-        "order_send_request",
-        symbol=symbol,
-        profile=settings["id"],
-        request=request
+    result, final_request, final_volume = (
+        _send_order_with_volume_fallback(
+            symbol=symbol,
+            request=request,
+            profile_id=settings["id"]
+        )
     )
-
-    result = mt5.order_send(request)
 
     if result is None:
         log_mt5_error(
             "order_send_failed",
             symbol=symbol,
-            request=request
+            request=final_request
         )
         log_trade(
             symbol,
             order_type,
-            adjusted_lot,
+            final_volume,
             price,
             sl,
             tp,
@@ -372,7 +580,7 @@ def execute_trade(
             level="error",
             symbol=symbol,
             profile=settings["id"],
-            request=request,
+            request=final_request,
             result=result
         )
         log_mt5_error(
@@ -383,7 +591,7 @@ def execute_trade(
         log_trade(
             symbol,
             order_type,
-            adjusted_lot,
+            final_volume,
             price,
             sl,
             tp,
@@ -401,14 +609,14 @@ def execute_trade(
         "order_send_success",
         symbol=symbol,
         profile=settings["id"],
-        request=request,
+        request=final_request,
         result=result
     )
 
     log_trade(
         symbol,
         order_type,
-        adjusted_lot,
+        final_volume,
         price,
         sl,
         tp,
@@ -1333,28 +1541,17 @@ def _fit_order_volume(
     request
 ):
 
-    symbol_info = mt5.symbol_info(symbol)
+    volume_rules = _get_order_volume_rules(
+        symbol,
+        failure_event="order_volume_check_failed"
+    )
 
-    if symbol_info is None:
-        log_mt5_error(
-            "order_volume_check_failed",
-            symbol=symbol,
-            reason="symbol_info_unavailable"
-        )
+    if volume_rules is None:
         return None
 
-    min_lot = float(
-        getattr(symbol_info, "volume_min", 0.01)
-        or 0.01
-    )
-    max_lot = float(
-        getattr(symbol_info, "volume_max", min_lot)
-        or min_lot
-    )
-    step = float(
-        getattr(symbol_info, "volume_step", min_lot)
-        or min_lot
-    )
+    min_lot = volume_rules["min_lot"]
+    max_lot = volume_rules["max_lot"]
+    step = volume_rules["step"]
     requested_volume = float(
         request.get("volume", min_lot)
         or min_lot
@@ -1435,6 +1632,175 @@ def _fit_order_volume(
     )
 
     return None
+
+
+def _send_order_with_volume_fallback(
+    symbol,
+    request,
+    profile_id
+):
+
+    volume_rules = _get_order_volume_rules(
+        symbol,
+        failure_event="order_send_volume_rules_failed"
+    )
+    working_request = request.copy()
+    final_volume = float(
+        working_request.get("volume", 0.0)
+        or 0.0
+    )
+
+    if volume_rules is None:
+        return None, working_request, final_volume
+
+    min_lot = volume_rules["min_lot"]
+    step = volume_rules["step"]
+    attempt = 1
+
+    while True:
+
+        log_event(
+            "order_send_request",
+            symbol=symbol,
+            profile=profile_id,
+            attempt=attempt,
+            request=working_request
+        )
+
+        result = mt5.order_send(working_request)
+        final_volume = float(
+            working_request.get("volume", 0.0)
+            or 0.0
+        )
+
+        if result is None:
+            return None, working_request, final_volume
+
+        if result.retcode == mt5.TRADE_RETCODE_DONE:
+            return result, working_request, final_volume
+
+        if not _is_volume_retryable_retcode(
+            getattr(result, "retcode", None)
+        ):
+            return result, working_request, final_volume
+
+        next_requested_volume = _reduce_volume(
+            final_volume,
+            min_lot,
+            step
+        )
+
+        if (
+            next_requested_volume is None
+            or _volumes_match(
+                final_volume,
+                next_requested_volume,
+                step
+            )
+        ):
+            return result, working_request, final_volume
+
+        retry_request = working_request.copy()
+        retry_request["volume"] = next_requested_volume
+        retry_volume = _fit_order_volume(
+            symbol,
+            retry_request
+        )
+
+        if retry_volume is None:
+            return result, working_request, final_volume
+
+        print(
+            f"{symbol}: Retrying trade with smaller lot "
+            f"{retry_volume}"
+        )
+
+        log_event(
+            "order_send_volume_retry",
+            level="warning",
+            symbol=symbol,
+            profile=profile_id,
+            attempt=attempt,
+            rejected_retcode=getattr(
+                result,
+                "retcode",
+                None
+            ),
+            rejected_comment=getattr(
+                result,
+                "comment",
+                None
+            ),
+            previous_volume=final_volume,
+            retry_volume=retry_volume
+        )
+
+        working_request["volume"] = retry_volume
+        attempt += 1
+
+
+def _get_order_volume_rules(
+    symbol,
+    failure_event
+):
+
+    symbol_info = mt5.symbol_info(symbol)
+
+    if symbol_info is None:
+        log_mt5_error(
+            failure_event,
+            symbol=symbol,
+            reason="symbol_info_unavailable"
+        )
+        return None
+
+    min_lot = float(
+        getattr(symbol_info, "volume_min", 0.01)
+        or 0.01
+    )
+    max_lot = float(
+        getattr(symbol_info, "volume_max", min_lot)
+        or min_lot
+    )
+    step = float(
+        getattr(symbol_info, "volume_step", min_lot)
+        or min_lot
+    )
+
+    return {
+        "min_lot": min_lot,
+        "max_lot": max_lot,
+        "step": step
+    }
+
+
+def _is_volume_retryable_retcode(
+    retcode
+):
+
+    retryable_retcodes = {
+        getattr(
+            mt5,
+            "TRADE_RETCODE_NO_MONEY",
+            None
+        ),
+        getattr(
+            mt5,
+            "TRADE_RETCODE_INVALID_VOLUME",
+            None
+        ),
+        getattr(
+            mt5,
+            "TRADE_RETCODE_LIMIT_VOLUME",
+            None
+        )
+    }
+
+    return retcode in {
+        candidate
+        for candidate in retryable_retcodes
+        if candidate is not None
+    }
 
 
 def _apply_risk_distance_protection(

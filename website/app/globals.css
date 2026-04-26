@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f4f1e8;
+  --foreground: #080b0a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 84px;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), "Geist", Arial, Helvetica, sans-serif;
+}
+
+::selection {
+  background: #33e060;
+  color: #080b0a;
+}
+
+.market-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(125deg, #070a09 0%, #0b1110 58%, #101514 100%);
+  background-position:
+    center,
+    center,
+    center;
+  background-size:
+    96px 96px,
+    96px 96px,
+    auto;
+}
+
+.hero-chart {
+  background:
+    linear-gradient(90deg, transparent 0 8%, #33e060 8% 8.4%, transparent 8.4% 16%, #33e060 16% 16.4%, transparent 16.4%),
+    linear-gradient(145deg, transparent 0 16%, rgba(51, 224, 96, 0.18) 16% 17%, transparent 17% 26%, rgba(31, 102, 255, 0.22) 26% 27%, transparent 27% 100%);
+  mask-image: linear-gradient(90deg, transparent, black 12%, black 88%, transparent);
+}
+
+.dashboard-shell,
+.phone-shell {
+  border-radius: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

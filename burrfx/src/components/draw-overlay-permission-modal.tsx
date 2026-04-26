@@ -28,42 +28,35 @@ export function DrawOverlayPermissionModal({
       visible={visible}
     >
       <View
+        className="flex-1 justify-center px-5"
         style={{
-          flex: 1,
-          justifyContent: "center",
-          paddingHorizontal: 20,
           backgroundColor: "rgba(7, 13, 20, 0.54)",
         }}
       >
         <View
+          className="gap-[18px] rounded-[28px] border p-[22px]"
           style={{
-            gap: 18,
-            borderRadius: 28,
             borderCurve: "continuous",
-            borderWidth: 1,
             borderColor: colors.borderSoft,
             backgroundColor: colors.surface,
-            padding: 22,
             boxShadow: colors.shadowLg,
           }}
         >
-          <View style={{ gap: 8 }}>
+          <View className="gap-2">
             <Text
+              className="text-[24px] font-extrabold"
               selectable
               style={{
                 color: colors.text,
-                fontSize: 24,
-                fontWeight: "800",
               }}
             >
               Allow floating window access
             </Text>
             <Text
+              className="text-[14px] leading-[21px]"
               selectable
               style={{
                 color: colors.textMuted,
-                fontSize: 14,
-                lineHeight: 21,
               }}
             >
               BurrFx needs Android&apos;s draw-over-apps permission to keep the
@@ -72,12 +65,7 @@ export function DrawOverlayPermissionModal({
             </Text>
           </View>
 
-          <View
-            style={{
-              flexDirection: "row",
-              gap: 10,
-            }}
-          >
+          <View className="flex-row gap-2.5">
             <PermissionButton
               label="Cancel"
               variant="secondary"
@@ -118,29 +106,24 @@ function PermissionButton({
   return (
     <Pressable
       accessibilityRole="button"
+      className="min-h-[50px] flex-1 items-center justify-center rounded-[18px] border"
       onPress={onPress}
       style={({ pressed }) => ({
-        flex: 1,
-        minHeight: 50,
-        alignItems: "center",
-        justifyContent: "center",
-        borderRadius: 18,
         borderCurve: "continuous",
-        borderWidth: variant === "secondary" ? 1 : 0,
+        borderWidth: 1,
         borderColor:
           variant === "secondary"
             ? colors.borderSoft
-            : "transparent",
+            : colors.accentDeep,
         backgroundColor,
         opacity: pressed ? 0.92 : 1,
       })}
     >
       <Text
+        className="text-[15px] font-extrabold"
         selectable
         style={{
           color: textColor,
-          fontSize: 15,
-          fontWeight: "800",
         }}
       >
         {label}

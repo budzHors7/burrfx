@@ -1,5 +1,6 @@
 import { Text, View } from "react-native";
 
+import { StatusPill } from "@/components/status-pill";
 import { useAppTheme } from "@/hooks/use-app-theme";
 import {
   formatPrice,
@@ -7,7 +8,6 @@ import {
   formatTimestamp,
 } from "@/lib/format";
 import type { OpenTradeItem } from "@/types/api";
-import { StatusPill } from "@/components/status-pill";
 
 type TradeCardProps = {
   trade: OpenTradeItem;
@@ -25,49 +25,36 @@ export function TradeCard({
 
   return (
     <View
+      className="gap-4 rounded-[26px] border p-[18px]"
       style={{
-        gap: 16,
-        borderRadius: 26,
         borderCurve: "continuous",
-        borderWidth: 1,
         borderColor: colors.borderSoft,
         backgroundColor: colors.panel,
-        padding: 18,
         boxShadow: colors.shadowMd,
       }}
     >
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <View style={{ gap: 6, flex: 1 }}>
+      <View className="flex-row items-start justify-between gap-3">
+        <View className="flex-1 gap-1.5">
           <Text
+            className="text-[22px] font-extrabold tracking-[0.3px]"
             selectable
             style={{
               color: colors.text,
-              fontSize: 22,
-              fontWeight: "800",
-              letterSpacing: 0.3,
             }}
           >
             {trade.symbol}
           </Text>
           <Text
+            className="text-[14px] font-semibold"
             selectable
             style={{
               color: colors.textMuted,
-              fontSize: 14,
-              fontWeight: "600",
             }}
           >
             Ticket #{trade.ticket} - {trade.volume.toFixed(2)} lot
           </Text>
         </View>
-        <View style={{ alignItems: "flex-end", gap: 8 }}>
+        <View className="items-end gap-2">
           <StatusPill
             label={trade.side}
             tone={trade.side === "BUY" ? "positive" : "warning"}
@@ -78,13 +65,7 @@ export function TradeCard({
         </View>
       </View>
 
-      <View
-        style={{
-          flexDirection: "row",
-          flexWrap: "wrap",
-          gap: 12,
-        }}
-      >
+      <View className="flex-row flex-wrap gap-3">
         <TradeMetric label="Open" value={formatPrice(trade.price_open)} />
         <TradeMetric
           label="Current"
@@ -101,54 +82,44 @@ export function TradeCard({
       </View>
 
       <View
+        className="flex-row items-center justify-between gap-3 pt-[14px]"
         style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
           borderTopWidth: 1,
           borderTopColor: colors.borderSoft,
-          paddingTop: 14,
         }}
       >
-        <View style={{ gap: 4 }}>
+        <View className="gap-1">
           <Text
+            className="text-[12px] font-semibold uppercase tracking-[0.4px]"
             selectable
             style={{
               color: colors.textDim,
-              fontSize: 12,
-              fontWeight: "600",
-              textTransform: "uppercase",
-              letterSpacing: 0.4,
             }}
           >
             Opened
           </Text>
           <Text
+            className="text-[15px] font-semibold"
             selectable
             style={{
               color: colors.text,
-              fontSize: 15,
-              fontWeight: "600",
             }}
           >
             {formatTimestamp(trade.opened_at)}
           </Text>
         </View>
-        <View style={{ alignItems: "flex-end", gap: 4 }}>
+        <View className="items-end gap-1">
           <Text
+            className="text-[12px] font-semibold uppercase tracking-[0.4px]"
             selectable
             style={{
               color: colors.textDim,
-              fontSize: 12,
-              fontWeight: "600",
-              textTransform: "uppercase",
-              letterSpacing: 0.4,
             }}
           >
             Floating PnL
           </Text>
           <Text
+            className="text-[18px] font-extrabold tabular-nums"
             selectable
             style={{
               color:
@@ -157,9 +128,6 @@ export function TradeCard({
                   : tone === "negative"
                     ? colors.danger
                     : colors.text,
-              fontSize: 18,
-              fontWeight: "800",
-              fontVariant: ["tabular-nums"],
             }}
           >
             {formatSignedCurrency(trade.profit, currency)}
@@ -180,32 +148,21 @@ function TradeMetric({
   const { colors } = useAppTheme();
 
   return (
-    <View
-      style={{
-        minWidth: "46%",
-        flexGrow: 1,
-        gap: 4,
-      }}
-    >
+    <View className="min-w-[46%] flex-1 gap-1">
       <Text
+        className="text-[12px] font-semibold uppercase tracking-[0.4px]"
         selectable
         style={{
           color: colors.textDim,
-          fontSize: 12,
-          fontWeight: "600",
-          textTransform: "uppercase",
-          letterSpacing: 0.4,
         }}
       >
         {label}
       </Text>
       <Text
+        className="text-[16px] font-bold tabular-nums"
         selectable
         style={{
           color: colors.text,
-          fontSize: 16,
-          fontWeight: "700",
-          fontVariant: ["tabular-nums"],
         }}
       >
         {value}

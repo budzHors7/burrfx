@@ -25,6 +25,14 @@ export type AccountJournalEntry = {
   currency: string | null;
 };
 
+export type AccountJournalPage = {
+  entries: AccountJournalEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+};
+
 type AccountJournalSnapshotInput = {
   account: AccountOverviewResponse;
   botStatus: BotStatusResponse | null;
@@ -192,35 +200,94 @@ export async function appendAccountJournalSnapshot(
 export async function getAccountJournalEntries(
   options?: {
     limit?: number;
+    offset?: number;
+    accountLogin?: number | null;
+    server?: string | null;
+  }
+) {
+  const page = await getAccountJournalPage(options);
+  return page.entries;
+}
+
+export async function getAccountJournalPage(
+  options?: {
+    limit?: number;
+    offset?: number;
     accountLogin?: number | null;
     server?: string | null;
   }
 ) {
   const db = await getJournalDb();
-  const limit = options?.limit ?? 120;
+  const limit = options?.limit ?? 30;
+  const offset = options?.offset ?? 0;
 
   if (options?.accountLogin && options?.server) {
-    return db.getAllAsync<AccountJournalEntry>(
+    const totalRow = await db.getFirstAsync<{
+      count: number;
+    }>(
+      `
+        SELECT COUNT(*) AS count
+        FROM account_journal
+        WHERE account_login = ? AND server = ?
+      `,
+      options.accountLogin,
+      options.server
+    );
+
+    const entries = await db.getAllAsync<AccountJournalEntry>(
       `
         SELECT *
         FROM account_journal
         WHERE account_login = ? AND server = ?
         ORDER BY id DESC
         LIMIT ?
+        OFFSET ?
       `,
       options.accountLogin,
       options.server,
-      limit
+      limit,
+      offset
     );
+
+    const total = totalRow?.count ?? 0;
+
+    return {
+      entries,
+      total,
+      limit,
+      offset,
+      hasMore: offset + entries.length < total,
+    } satisfies AccountJournalPage;
   }
 
-  return db.getAllAsync<AccountJournalEntry>(
+  const totalRow = await db.getFirstAsync<{
+    count: number;
+  }>(
+    `
+      SELECT COUNT(*) AS count
+      FROM account_journal
+    `
+  );
+
+  const entries = await db.getAllAsync<AccountJournalEntry>(
     `
       SELECT *
       FROM account_journal
       ORDER BY id DESC
       LIMIT ?
+      OFFSET ?
     `,
-    limit
+    limit,
+    offset
   );
+
+  const total = totalRow?.count ?? 0;
+
+  return {
+    entries,
+    total,
+    limit,
+    offset,
+    hasMore: offset + entries.length < total,
+  } satisfies AccountJournalPage;
 }

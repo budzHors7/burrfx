@@ -12,34 +12,56 @@ from trading.debug_logger import get_debug_log_paths
 class AccountLogService:
     def get_account_logs(
         self,
-        limit: int = 120,
+        limit: int = 30,
+        offset: int = 0,
     ) -> AccountLogsResponse:
         paths = get_debug_log_paths()
         source_file = self._pick_source_file(paths)
 
         if source_file is None or not os.path.exists(source_file):
-          return AccountLogsResponse(
-              count=0,
-              source_file=source_file,
-              entries=[],
-          )
+            return AccountLogsResponse(
+                count=0,
+                total=0,
+                limit=limit,
+                offset=offset,
+                has_more=False,
+                source_file=source_file,
+                entries=[],
+            )
 
+        total = 0
+        tail_lines = deque(maxlen=limit + offset)
         with open(
             source_file,
             mode="r",
             encoding="utf-8",
             errors="replace",
         ) as handle:
-            lines = list(deque(handle, maxlen=limit))
+            for raw_line in handle:
+                if not raw_line.strip():
+                    continue
+
+                total += 1
+                tail_lines.append(raw_line)
+
+        lines = list(tail_lines)
+        if offset > 0:
+            visible_count = max(0, len(lines) - offset)
+            lines = lines[:visible_count]
+
+        page_lines = lines[-limit:]
 
         entries = [
             self._parse_line(line, source_file)
-            for line in lines
-            if line.strip()
+            for line in reversed(page_lines)
         ]
 
         return AccountLogsResponse(
             count=len(entries),
+            total=total,
+            limit=limit,
+            offset=offset,
+            has_more=total > offset + len(entries),
             source_file=source_file,
             entries=entries,
         )

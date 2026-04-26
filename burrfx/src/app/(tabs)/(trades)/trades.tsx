@@ -59,10 +59,10 @@ export default function TradesScreen() {
       }}
       contentInsetAdjustmentBehavior="automatic"
     >
-      <View style={{ gap: 18 }}>
+      <View className="gap-[18px]">
         <PageHeading
           accessory={
-            <View style={{ minWidth: 112 }}>
+            <View className="min-w-[112px]">
               <ActionButton
                 label="Refresh"
                 variant="secondary"
@@ -81,42 +81,26 @@ export default function TradesScreen() {
         />
 
         <View
+          className="gap-4 rounded-[30px] p-5"
           style={{
-            gap: 16,
-            borderRadius: 30,
             borderCurve: "continuous",
             backgroundColor: colors.surface,
-            padding: 20,
             boxShadow: colors.shadowLg,
           }}
         >
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-            }}
-          >
-            <View style={{ flex: 1, gap: 6 }}>
+          <View className="flex-row flex-wrap items-center justify-between gap-3">
+            <View className="flex-1 gap-1.5">
               <Text
+                className="text-[22px] font-extrabold"
                 selectable
-                style={{
-                  color: colors.text,
-                  fontSize: 22,
-                  fontWeight: "800",
-                }}
+                style={{ color: colors.text }}
               >
                 Exposure overview
               </Text>
               <Text
+                className="text-[14px] leading-5"
                 selectable
-                style={{
-                  color: colors.textMuted,
-                  fontSize: 14,
-                  lineHeight: 20,
-                }}
+                style={{ color: colors.textMuted }}
               >
                 This screen mirrors the current MT5 positions that the BurrFx
                 API sees on the connected Windows host.
@@ -138,13 +122,7 @@ export default function TradesScreen() {
             />
           </View>
 
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              gap: 12,
-            }}
-          >
+          <View className="flex-row flex-wrap gap-3">
             <MetricCard
               label="Balance"
               value={formatCurrency(account?.balance, currency)}
@@ -172,30 +150,23 @@ export default function TradesScreen() {
 
           {showOverlayControls ? (
             <View
+              className="gap-2.5 pt-[14px]"
               style={{
-                gap: 10,
                 borderTopWidth: 1,
                 borderTopColor: colors.borderSoft,
-                paddingTop: 14,
               }}
             >
               <Text
+                className="text-[18px] font-extrabold"
                 selectable
-                style={{
-                  color: colors.text,
-                  fontSize: 18,
-                  fontWeight: "800",
-                }}
+                style={{ color: colors.text }}
               >
                 Floating window
               </Text>
               <Text
+                className="text-[13px] leading-[18px]"
                 selectable
-                style={{
-                  color: colors.textMuted,
-                  fontSize: 13,
-                  lineHeight: 18,
-                }}
+                style={{ color: colors.textMuted }}
               >
                 Show the shorter trade bubble over other apps so balance,
                 equity, and quick close actions stay visible while you multitask
@@ -222,48 +193,36 @@ export default function TradesScreen() {
 
         {trades.length === 0 ? (
           <View
+            className="gap-2.5 rounded-[28px] border p-[22px]"
             style={{
-              gap: 10,
-              borderRadius: 28,
               borderCurve: "continuous",
-              borderWidth: 1,
               borderColor: colors.borderSoft,
               backgroundColor: colors.panel,
-              padding: 22,
               boxShadow: colors.shadowMd,
             }}
           >
             <Text
+              className="text-[20px] font-extrabold"
               selectable
-              style={{
-                color: colors.text,
-                fontSize: 20,
-                fontWeight: "800",
-              }}
+              style={{ color: colors.text }}
             >
               No open trades right now
             </Text>
             <Text
+              className="text-[15px] leading-[22px]"
               selectable
-              style={{
-                color: colors.textMuted,
-                fontSize: 15,
-                lineHeight: 22,
-              }}
+              style={{ color: colors.textMuted }}
             >
               When the MT5 session opens positions, they will appear here with
               current pricing, stop loss, take profit, and floating PnL.
             </Text>
           </View>
         ) : (
-          <View style={{ gap: 14 }}>
+          <View className="gap-[14px]">
             <Text
+              className="text-[20px] font-extrabold"
               selectable
-              style={{
-                color: colors.text,
-                fontSize: 20,
-                fontWeight: "800",
-              }}
+              style={{ color: colors.text }}
             >
               Open positions
             </Text>

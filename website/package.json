@@ -1,0 +1,46 @@
+{
+  "name": "website",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "motion:studio": "remotion studio remotion/index.ts",
+    "motion:render:flow": "remotion render remotion/index.ts BurrFxBotFlow public/burrfx-bot-flow.gif --codec=gif",
+    "motion:render:product": "remotion render remotion/index.ts BurrFxProductShowcase public/burrfx-product-showcase.mp4 --codec=h264 --crf=24",
+    "motion:render:mobile": "remotion render remotion/index.ts BurrFxMobileControl public/burrfx-mobile-control.mp4 --codec=h264 --crf=25",
+    "motion:poster:product": "remotion still remotion/index.ts BurrFxProductShowcase public/burrfx-product-showcase-poster.png --frame=120",
+    "motion:poster:mobile": "remotion still remotion/index.ts BurrFxMobileControl public/burrfx-mobile-control-poster.png --frame=120",
+    "motion:render": "bun run motion:render:flow && bun run motion:render:product && bun run motion:render:mobile && bun run motion:poster:product && bun run motion:poster:mobile"
+  },
+  "dependencies": {
+    "@better-auth/infra": "^0.2.5",
+    "better-auth": "^1.6.9",
+    "lucide-react": "^1.11.0",
+    "next": "16.2.4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@remotion/cli": "^4.0.451",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.4",
+    "remotion": "^4.0.451",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  },
+  "ignoreScripts": [
+    "sharp",
+    "unrs-resolver"
+  ],
+  "trustedDependencies": [
+    "sharp",
+    "unrs-resolver"
+  ]
+}

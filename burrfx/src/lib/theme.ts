@@ -44,6 +44,11 @@ export type ThemePalette = {
   shadowLg: string;
 };
 
+export type NativeWindThemeVariables = Record<
+  `--${string}`,
+  string | number
+>;
+
 export const darkPalette: ThemePalette = {
   background: "#04111d",
   backgroundSoft: "#091d2e",
@@ -144,5 +149,26 @@ export function getThemePalette(
     textOnAccent: dynamic.onPrimary,
     heroOrbPrimary: dynamic.primaryContainer,
     tabBarShadow: dynamic.outlineVariant,
+  };
+}
+
+export function getNativeWindThemeVariables(
+  palette: ThemePalette
+): NativeWindThemeVariables {
+  return {
+    "--app-background": palette.background,
+    "--app-background-soft": palette.backgroundSoft,
+    "--app-surface": palette.surface,
+    "--app-surface-raised": palette.surfaceRaised,
+    "--app-surface-alt": palette.surfaceAlt,
+    "--app-panel": palette.panel,
+    "--app-panel-muted": palette.panelMuted,
+    "--app-text": palette.text,
+    "--app-text-muted": palette.textMuted,
+    "--app-text-dim": palette.textDim,
+    "--app-input": palette.inputBackground,
+    "--app-error-bg": palette.errorBackground,
+    "--app-hero-secondary": palette.heroOrbSecondary,
+    "--app-tabbar": palette.tabBarBackground,
   };
 }

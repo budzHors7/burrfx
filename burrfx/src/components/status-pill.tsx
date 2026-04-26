@@ -35,23 +35,17 @@ export function StatusPill({
 
   return (
     <View
+      className="self-start rounded-full px-3 py-[7px]"
       style={{
-        alignSelf: "flex-start",
-        borderRadius: 999,
         borderCurve: "continuous",
-        paddingHorizontal: 12,
-        paddingVertical: 7,
         backgroundColor,
       }}
     >
       <Text
+        className="text-[12px] font-bold uppercase tracking-[0.3px]"
         selectable
         style={{
           color: textColor,
-          fontSize: 12,
-          fontWeight: "700",
-          letterSpacing: 0.3,
-          textTransform: "uppercase",
         }}
       >
         {label}

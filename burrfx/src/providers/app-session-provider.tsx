@@ -20,8 +20,6 @@ import { TRADE_OVERLAY_BUBBLE_ID } from "@/lib/trade-overlay";
 import { updateTradeOverlaySnapshot } from "@/lib/trade-overlay-store";
 import { getTradingProfileOption } from "@/lib/trading-profiles";
 import type {
-  AccountLogEntry,
-  AccountLogsResponse,
   AccountOverviewResponse,
   AuthLoginResponse,
   AuthSessionResponse,
@@ -46,8 +44,6 @@ type AppSessionContextValue = {
   account: AccountOverviewResponse | null;
   trades: OpenTradeItem[];
   botStatus: BotStatusResponse | null;
-  logs: AccountLogEntry[];
-  logSourceFile: string | null;
   journalRevision: number;
   errorMessage: string | null;
   isHydrating: boolean;
@@ -67,6 +63,8 @@ const AppSessionContext = createContext<AppSessionContextValue | null>(null);
 
 const initialConnectionState =
   readPersistedConnectionState();
+const initialPersistedApiBaseUrl =
+  api.normalizeBaseUrl(initialConnectionState.apiBaseUrl);
 
 function getErrorMessage(
   error: unknown
@@ -82,14 +80,6 @@ function getErrorMessage(
   return "Something went wrong while talking to the BurrFx server.";
 }
 
-function getEmptyLogsResponse(): AccountLogsResponse {
-  return {
-    count: 0,
-    source_file: null,
-    entries: [],
-  };
-}
-
 export function AppSessionProvider({
   children,
 }: PropsWithChildren) {
@@ -103,27 +93,16 @@ export function AppSessionProvider({
   const [account, setAccount] = useState<AccountOverviewResponse | null>(null);
   const [trades, setTrades] = useState<OpenTradeItem[]>([]);
   const [botStatus, setBotStatus] = useState<BotStatusResponse | null>(null);
-  const [logs, setLogs] = useState<AccountLogEntry[]>([]);
-  const [logSourceFile, setLogSourceFile] =
-    useState<string | null>(null);
   const [journalRevision, setJournalRevision] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isHydrating, setIsHydrating] = useState(() =>
-    Boolean(
-      api.normalizeBaseUrl(
-        initialConnectionState.apiBaseUrl ||
-          defaultApiBaseUrl
-      )
-    )
+    Boolean(initialPersistedApiBaseUrl)
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const hasHydratedOnceRef = useRef(false);
   const initialApiBaseUrlRef = useRef(
-    api.normalizeBaseUrl(
-      initialConnectionState.apiBaseUrl ||
-        defaultApiBaseUrl
-    )
+    initialPersistedApiBaseUrl
   );
   const overlayModuleRef =
     useRef<DrawOverAppsModule | null>(null);
@@ -137,8 +116,6 @@ export function AppSessionProvider({
     startTransition(() => {
       setAccount(null);
       setTrades([]);
-      setLogs([]);
-      setLogSourceFile(null);
     });
   }
 
@@ -146,28 +123,14 @@ export function AppSessionProvider({
     nextSession: AuthSessionResponse,
     nextAccount: AccountOverviewResponse | null,
     nextTrades: OpenTradeItem[],
-    nextBotStatus: BotStatusResponse | null,
-    nextLogs: AccountLogEntry[],
-    nextLogSourceFile: string | null
+    nextBotStatus: BotStatusResponse | null
   ) {
     startTransition(() => {
       setSession(nextSession);
       setAccount(nextAccount);
       setTrades(nextTrades);
       setBotStatus(nextBotStatus);
-      setLogs(nextLogs);
-      setLogSourceFile(nextLogSourceFile);
     });
-  }
-
-  async function loadAccountLogsSafe(
-    targetBaseUrl: string
-  ) {
-    try {
-      return await api.getAccountLogs(targetBaseUrl);
-    } catch {
-      return getEmptyLogsResponse();
-    }
   }
 
   async function loadSnapshot(
@@ -181,8 +144,6 @@ export function AppSessionProvider({
       startTransition(() => {
         setSession(null);
         setBotStatus(null);
-        setLogs([]);
-        setLogSourceFile(null);
       });
       clearAuthedData();
       return;
@@ -196,27 +157,22 @@ export function AppSessionProvider({
         nextSession,
         null,
         [],
-        nextBotStatus,
-        [],
-        null
+        nextBotStatus
       );
       return;
     }
 
-    const [nextAccount, nextTrades, nextLogs] =
+    const [nextAccount, nextTrades] =
       await Promise.all([
         api.getAccountOverview(targetBaseUrl),
         api.getOpenTrades(targetBaseUrl),
-        loadAccountLogsSafe(targetBaseUrl),
       ]);
 
     applySnapshot(
       nextSession,
       nextAccount,
       nextTrades.trades,
-      nextBotStatus,
-      nextLogs.entries,
-      nextLogs.source_file ?? null
+      nextBotStatus
     );
   }
 
@@ -266,8 +222,6 @@ export function AppSessionProvider({
                 }
               : current
           );
-          setLogs([]);
-          setLogSourceFile(null);
         });
         clearAuthedData();
       }
@@ -325,8 +279,6 @@ export function AppSessionProvider({
         setAccount(response.account);
         setTrades([]);
         setBotStatus(nextBotStatus);
-        setLogs([]);
-        setLogSourceFile(null);
       });
 
       await refreshAll({ silent: true });
@@ -347,8 +299,6 @@ export function AppSessionProvider({
       startTransition(() => {
         setSession(null);
         setBotStatus(null);
-        setLogs([]);
-        setLogSourceFile(null);
       });
       return;
     }
@@ -361,8 +311,6 @@ export function AppSessionProvider({
       startTransition(() => {
         setSession(response.session);
         setBotStatus(null);
-        setLogs([]);
-        setLogSourceFile(null);
       });
       clearAuthedData();
     } catch (error) {
@@ -607,8 +555,6 @@ export function AppSessionProvider({
     account,
     trades,
     botStatus,
-    logs,
-    logSourceFile,
     journalRevision,
     errorMessage,
     isHydrating,

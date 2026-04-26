@@ -263,7 +263,6 @@ def _normalize_fxstreet_event(
     if (
         actual is None
         or consensus is None
-        or is_better is None
     ):
         return None
 
@@ -295,7 +294,9 @@ def _normalize_fxstreet_event(
         "consensus": consensus,
         "previous": raw_event.get("previous"),
         "revised": raw_event.get("revised"),
-        "is_better_than_expected": bool(is_better),
+        "is_better_than_expected": (
+            None if is_better is None else bool(is_better)
+        ),
         "unit": raw_event.get("unit"),
         "volatility": volatility
     }

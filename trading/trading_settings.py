@@ -38,9 +38,14 @@ PUBLIC_PROFILE_FIELDS = [
     "lot_mode",
     "risk_percent",
     "max_spread_points",
+    "bypass_spread_filter",
+    "bypass_session_filter",
     "use_take_profit",
     "use_break_even",
-    "use_trailing_stop"
+    "use_trailing_stop",
+    "safe_floating_profit_percent",
+    "max_positions_per_symbol",
+    "addon_spacing_atr"
 ]
 PROFILE_DEFINITIONS = {
     "smart_risk": {
@@ -70,10 +75,15 @@ PROFILE_DEFINITIONS = {
             MAX_SPREAD_POINTS,
             18
         ),
+        "bypass_spread_filter": False,
+        "bypass_session_filter": False,
         "use_take_profit": True,
         "extend_take_profit": False,
         "use_break_even": True,
-        "use_trailing_stop": False
+        "use_trailing_stop": False,
+        "safe_floating_profit_percent": 2.0,
+        "max_positions_per_symbol": 3,
+        "addon_spacing_atr": 1.0
     },
     "regular_risk": {
         "label": "Regular Risk",
@@ -98,17 +108,22 @@ PROFILE_DEFINITIONS = {
             TP1_LOCK_ATR_BUFFER
         ),
         "max_spread_points": MAX_SPREAD_POINTS,
+        "bypass_spread_filter": False,
+        "bypass_session_filter": False,
         "use_take_profit": True,
         "extend_take_profit": True,
         "use_break_even": True,
-        "use_trailing_stop": True
+        "use_trailing_stop": True,
+        "safe_floating_profit_percent": 2.0,
+        "max_positions_per_symbol": 3,
+        "addon_spacing_atr": 1.0
     },
     "highly_risky": {
         "label": "Highly Risky",
         "description": (
             "Higher automatic lot size, no TP, "
             "break-even first, then trailing stop, "
-            "with a wider spread allowance."
+            "with spread and session filters off."
         ),
         "lot_mode": "auto",
         "risk_percent": max(
@@ -144,10 +159,15 @@ PROFILE_DEFINITIONS = {
             MAX_SPREAD_POINTS,
             45
         ),
+        "bypass_spread_filter": True,
+        "bypass_session_filter": True,
         "use_take_profit": False,
         "extend_take_profit": False,
         "use_break_even": True,
-        "use_trailing_stop": True
+        "use_trailing_stop": True,
+        "safe_floating_profit_percent": 2.0,
+        "max_positions_per_symbol": 3,
+        "addon_spacing_atr": 1.0
     }
 }
 
@@ -255,7 +275,11 @@ def trading_settings_menu():
             )
             print(
                 f"   Spread limit: "
-                f"{profile['max_spread_points']} points"
+                f"{_format_spread_summary(profile)}"
+            )
+            print(
+                f"   Sessions: "
+                f"{_format_session_summary(profile)}"
             )
             print(
                 f"   TP: "
@@ -332,6 +356,13 @@ def trading_settings_menu():
 
 
 def _get_active_profile_id():
+
+    env_profile_id = os.environ.get(
+        "BURRFX_TRADING_PROFILE"
+    )
+
+    if env_profile_id in PROFILE_DEFINITIONS:
+        return env_profile_id
 
     loaded_profile_id = _load_profile_selection()
 
@@ -435,3 +466,19 @@ def _format_lot_summary(profile):
         f"Auto risk "
         f"{profile['risk_percent']:.2f}%"
     )
+
+
+def _format_spread_summary(profile):
+
+    if profile.get("bypass_spread_filter", False):
+        return "OFF"
+
+    return f"{profile['max_spread_points']} points"
+
+
+def _format_session_summary(profile):
+
+    if profile.get("bypass_session_filter", False):
+        return "ALL SYMBOLS"
+
+    return "SESSION FILTERED"

@@ -19,16 +19,13 @@ export function PageHeading({
   const { colors } = useAppTheme();
 
   return (
-    <View style={{ gap: 14 }}>
+    <View className="gap-[14px]">
       {eyebrow ? (
         <Text
+          className="text-[12px] font-bold uppercase tracking-[0.9px]"
           selectable
           style={{
             color: colors.textDim,
-            fontSize: 12,
-            fontWeight: "700",
-            letterSpacing: 0.9,
-            textTransform: "uppercase",
           }}
         >
           {eyebrow}
@@ -36,32 +33,23 @@ export function PageHeading({
       ) : null}
 
       <View
-        style={{
-          flexDirection: "row",
-          flexWrap: "wrap",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: 16,
-        }}
+        className="flex-row flex-wrap items-start justify-between gap-4"
       >
-        <View style={{ flex: 1, minWidth: 240, gap: 8 }}>
+        <View className="min-w-[240px] flex-1 gap-2">
           <Text
+            className="text-[30px] font-black leading-[34px]"
             selectable
             style={{
               color: colors.text,
-              fontSize: 30,
-              lineHeight: 34,
-              fontWeight: "900",
             }}
           >
             {title}
           </Text>
           <Text
+            className="text-[15px] leading-[22px]"
             selectable
             style={{
               color: colors.textMuted,
-              fontSize: 15,
-              lineHeight: 22,
             }}
           >
             {description}
@@ -73,4 +61,3 @@ export function PageHeading({
     </View>
   );
 }
-

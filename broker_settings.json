@@ -1,0 +1,58 @@
+{
+  "brokers": {
+    "exness": {
+      "enabled": true,
+      "label": "Exness",
+      "terminal_path": "C:\\Program Files\\MetaTrader 5 EXNESS\\terminal64.exe",
+      "expected_login": 435325248,
+      "expected_server": "Exness-MT5Trial9",
+      "trading_profile": "regular_risk",
+      "symbols": [
+        {
+          "canonical": "EURUSD",
+          "mt5": "EURUSDm",
+          "enabled": true
+        },
+        {
+          "canonical": "GBPUSD",
+          "mt5": "GBPUSDm",
+          "enabled": true
+        },
+        {
+          "canonical": "USDJPY",
+          "mt5": "USDJPYm",
+          "enabled": true
+        },
+        {
+          "canonical": "USTEC",
+          "mt5": "USTECm",
+          "enabled": true
+        },
+        {
+          "canonical": "US30",
+          "mt5": "US30m",
+          "enabled": true
+        },
+        {
+          "canonical": "DE30",
+          "mt5": "DE30m",
+          "enabled": true
+        },
+        {
+          "canonical": "XAUUSD",
+          "mt5": "XAUUSDm",
+          "enabled": true
+        }
+      ]
+    },
+    "deriv": {
+      "enabled": false,
+      "label": "Deriv",
+      "terminal_path": "",
+      "expected_login": null,
+      "expected_server": "",
+      "trading_profile": "regular_risk",
+      "symbols": []
+    }
+  }
+}

@@ -40,24 +40,22 @@ export function ThemeModePicker() {
   } = useAppTheme();
 
   return (
-    <View style={{ gap: 12 }}>
-      <View style={{ gap: 4 }}>
+    <View className="gap-3">
+      <View className="gap-1">
         <Text
+          className="text-[18px] font-extrabold"
           selectable
           style={{
             color: colors.text,
-            fontSize: 18,
-            fontWeight: "800",
           }}
         >
           Theme mode
         </Text>
         <Text
+          className="text-[13px] leading-[18px]"
           selectable
           style={{
             color: colors.textMuted,
-            fontSize: 13,
-            lineHeight: 18,
           }}
         >
           Choose a fixed light or dark look, or let BurrFx match the device.
@@ -65,15 +63,11 @@ export function ThemeModePicker() {
       </View>
 
       <View
+        className="flex-row gap-2 rounded-[20px] border p-1"
         style={{
-          flexDirection: "row",
-          gap: 8,
-          borderRadius: 20,
           borderCurve: "continuous",
-          borderWidth: 1,
           borderColor: colors.borderSoft,
           backgroundColor: colors.surfaceRaised,
-          padding: 4,
         }}
       >
         {THEME_OPTIONS.map((option) => {
@@ -83,32 +77,32 @@ export function ThemeModePicker() {
             <Pressable
               key={option.mode}
               accessibilityRole="button"
+              className="min-h-[42px] flex-1 items-center justify-center rounded-[16px]"
               onPress={() => {
                 setMode(option.mode);
               }}
               style={({ pressed }) => ({
-                flex: 1,
-                minHeight: 42,
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 16,
                 borderCurve: "continuous",
+                borderWidth: 1,
+                borderColor: isSelected
+                  ? colors.accentDeep
+                  : "transparent",
                 backgroundColor: isSelected
                   ? colors.accent
                   : "transparent",
                 opacity: pressed ? 0.92 : 1,
               })}
             >
-              <Text
-                selectable
-                style={{
-                  color: isSelected
-                    ? colors.textOnAccent
-                    : colors.textMuted,
-                  fontSize: 13,
-                  fontWeight: isSelected ? "800" : "700",
-                }}
-              >
+                <Text
+                  className="text-[13px] font-bold"
+                  selectable
+                  style={{
+                    color: isSelected
+                      ? colors.textOnAccent
+                      : colors.text,
+                    fontWeight: isSelected ? "800" : "700",
+                  }}
+                >
                 {option.label}
               </Text>
             </Pressable>
@@ -117,11 +111,10 @@ export function ThemeModePicker() {
       </View>
 
       <Text
+        className="text-[12px] leading-[18px]"
         selectable
         style={{
           color: colors.textDim,
-          fontSize: 12,
-          lineHeight: 18,
         }}
       >
         Active appearance:{" "}
@@ -137,35 +130,29 @@ export function ThemeModePicker() {
       </Text>
 
       {Platform.OS === "android" ? (
-        <View style={{ gap: 12 }}>
-          <View style={{ gap: 4 }}>
+        <View className="gap-3">
+          <View className="gap-1">
             <Text
+              className="text-[18px] font-extrabold"
               selectable
               style={{
                 color: colors.text,
-                fontSize: 18,
-                fontWeight: "800",
               }}
             >
               Android colors
             </Text>
             <Text
+              className="text-[13px] leading-[18px]"
               selectable
               style={{
                 color: colors.textMuted,
-                fontSize: 13,
-                lineHeight: 18,
               }}
             >
               Keep BurrFx blue or let Android supply system accent colors.
             </Text>
           </View>
 
-          <View
-            style={{
-              gap: 8,
-            }}
-          >
+          <View className="gap-2">
             {ACCENT_OPTIONS.map((option) => {
               const isSelected =
                 option.mode === accentStyle;
@@ -174,33 +161,28 @@ export function ThemeModePicker() {
                 <Pressable
                   key={option.mode}
                   accessibilityRole="button"
+                  className="min-h-[46px] items-center justify-center rounded-[16px] border"
                   onPress={() => {
                     setAccentStyle(option.mode);
                   }}
                   style={({ pressed }) => ({
-                    minHeight: 46,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    borderRadius: 16,
                     borderCurve: "continuous",
-                    borderWidth: 1,
                     borderColor: isSelected
-                      ? colors.accent
+                      ? colors.accentDeep
                       : colors.borderSoft,
                     backgroundColor: isSelected
-                      ? colors.accentSoft
+                      ? colors.accent
                       : colors.surfaceRaised,
                     opacity: pressed ? 0.92 : 1,
                   })}
                 >
                   <Text
+                    className="text-[13px] font-extrabold"
                     selectable
                     style={{
                       color: isSelected
-                        ? colors.accentDeep
+                        ? colors.textOnAccent
                         : colors.text,
-                      fontSize: 13,
-                      fontWeight: "800",
                     }}
                   >
                     {option.label}

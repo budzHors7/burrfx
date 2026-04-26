@@ -30,7 +30,8 @@ def get_account_overview() -> AccountOverviewResponse:
     response_model_exclude_none=True,
 )
 def get_account_logs(
-    limit: int = Query(default=120, ge=1, le=500),
+    limit: int = Query(default=30, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
 ) -> AccountLogsResponse:
     session = mt5_service.get_session_snapshot()
 
@@ -40,4 +41,7 @@ def get_account_logs(
             detail="No active MT5 session. Login first from the mobile app or API client.",
         )
 
-    return log_service.get_account_logs(limit=limit)
+    return log_service.get_account_logs(
+        limit=limit,
+        offset=offset,
+    )

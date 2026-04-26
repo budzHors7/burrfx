@@ -24,15 +24,12 @@ export function FormField({
   const { colors } = useAppTheme();
 
   return (
-    <View style={{ gap: 8 }}>
+    <View className="gap-2">
       <Text
+        className="text-[13px] font-semibold uppercase tracking-[0.4px]"
         selectable
         style={{
           color: colors.textMuted,
-          fontSize: 13,
-          fontWeight: "600",
-          letterSpacing: 0.4,
-          textTransform: "uppercase",
         }}
       >
         {label}
@@ -45,16 +42,12 @@ export function FormField({
         placeholder={placeholder}
         placeholderTextColor={colors.textDim}
         secureTextEntry={secureTextEntry}
+        className="min-h-14 rounded-[18px] border px-4 text-base"
         style={{
-          minHeight: 56,
-          borderRadius: 18,
           borderCurve: "continuous",
-          borderWidth: 1,
           borderColor: colors.border,
           backgroundColor: colors.inputBackground,
           color: colors.text,
-          paddingHorizontal: 16,
-          fontSize: 16,
           boxShadow: colors.shadowSm,
         }}
         value={value}

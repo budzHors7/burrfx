@@ -3,6 +3,7 @@ import time
 import MetaTrader5 as mt5
 import pandas as pd
 import keyboard
+import os
 from .risk_manager import calculate_lot_size
 from utils import clear_screen, pause
 from logo import show_logo
@@ -34,6 +35,14 @@ from .market_filters import (
     get_active_session_label
 )
 from trading.debug_logger import log_event, log_mt5_error
+from trading.broker_runtime import (
+    get_symbol_metadata,
+    set_active_broker,
+    clear_active_broker
+)
+from trading.broker_settings import (
+    broker_requires_strategy_pause
+)
 from trading.symbol_logger import log_symbol
 from trading.strategy_engine import (
     build_strategy_cycle_context,
@@ -104,10 +113,21 @@ def get_symbol_data(
     bars
 ):
 
+    symbol_meta = get_symbol_metadata(symbol)
+
+    if not mt5.symbol_select(symbol, True):
+        log_mt5_error(
+            "symbol_select_failed",
+            level="warning",
+            symbol=symbol,
+            canonical_symbol=symbol_meta["canonical"],
+            mt5_symbol=symbol_meta["mt5"]
+        )
+
     rates = mt5.copy_rates_from_pos(
         symbol,
         timeframe_code,
-        0,
+        1,
         bars
     )
 
@@ -115,8 +135,11 @@ def get_symbol_data(
         log_mt5_error(
             "symbol_rates_unavailable",
             symbol=symbol,
+            canonical_symbol=symbol_meta["canonical"],
+            mt5_symbol=symbol_meta["mt5"],
             timeframe=timeframe_label,
-            bars=bars
+            bars=bars,
+            start_pos=1
         )
         return None
 
@@ -129,6 +152,7 @@ def process_symbol(
     cycle_context=None
 ):
 
+    symbol_meta = get_symbol_metadata(symbol)
     strategies = get_enabled_strategies()
 
     if not strategies:
@@ -136,6 +160,8 @@ def process_symbol(
             "process_symbol_skipped",
             level="warning",
             symbol=symbol,
+            canonical_symbol=symbol_meta["canonical"],
+            mt5_symbol=symbol_meta["mt5"],
             reason="no_enabled_strategies"
         )
         return
@@ -162,10 +188,12 @@ def process_symbol(
         if df is None or df.empty:
             log_event(
                 "process_symbol_skipped",
-                level="warning",
-                symbol=symbol,
-                strategy=strategy["id"],
-                reason="no_market_data"
+            level="warning",
+            symbol=symbol,
+            canonical_symbol=symbol_meta["canonical"],
+            mt5_symbol=symbol_meta["mt5"],
+            strategy=strategy["id"],
+            reason="no_market_data"
             )
             continue
 
@@ -182,8 +210,10 @@ def process_symbol(
     if not signals:
         log_event(
             "signal_not_found",
-            symbol=symbol,
-            strategies=[
+        symbol=symbol,
+        canonical_symbol=symbol_meta["canonical"],
+        mt5_symbol=symbol_meta["mt5"],
+        strategies=[
                 strategy["id"]
                 for strategy in strategies
             ]
@@ -266,7 +296,9 @@ def process_symbol(
         print("Account error")
         log_mt5_error(
             "process_symbol_account_error",
-            symbol=symbol
+            symbol=symbol,
+            canonical_symbol=symbol_meta["canonical"],
+            mt5_symbol=symbol_meta["mt5"]
         )
         return None
 
@@ -295,6 +327,8 @@ def process_symbol(
     log_event(
         "signal_detected",
         symbol=symbol,
+        canonical_symbol=symbol_meta["canonical"],
+        mt5_symbol=symbol_meta["mt5"],
         signal=signal,
         price=price,
         atr=atr,
@@ -326,18 +360,47 @@ def start_live_trading(
     initialize_mt5=True,
     shutdown_mt5=True,
     stop_event=None,
-    status_callback=None
+    status_callback=None,
+    broker_context=None
 ):
 
     mt5_initialized = False
+    previous_profile_env = os.environ.get(
+        "BURRFX_TRADING_PROFILE"
+    )
     try:
 
-        log_event("live_trading_start_requested")
+        if broker_context is not None:
+            set_active_broker(broker_context)
+            os.environ["BURRFX_TRADING_PROFILE"] = (
+                broker_context.get(
+                    "trading_profile",
+                    "regular_risk"
+                )
+            )
+
+        log_event(
+            "live_trading_start_requested",
+            broker_context=broker_context
+        )
         _notify_status(
             status_callback,
             phase="starting",
             detail="Preparing live trading runtime."
         )
+
+        if (
+            broker_context is not None
+            and broker_requires_strategy_pause(broker_context)
+        ):
+            return _build_runtime_result(
+                "paused",
+                "broker_strategy_paused",
+                (
+                    f"{broker_context['label']} paused: "
+                    "no synthetic strategy config enabled."
+                )
+            )
 
         enabled_strategies = get_enabled_strategies()
 
@@ -363,7 +426,9 @@ def start_live_trading(
 
         if (
             initialize_mt5
-            and not mt5.initialize()
+            and not _initialize_mt5_for_broker(
+                broker_context
+            )
         ):
 
             print("MT5 initialization failed")
@@ -382,6 +447,25 @@ def start_live_trading(
             )
 
         mt5_initialized = initialize_mt5
+
+        account_validation_error = (
+            _validate_broker_account(
+                broker_context
+            )
+        )
+
+        if account_validation_error is not None:
+            print(account_validation_error)
+            log_event(
+                "broker_account_validation_failed",
+                level="error",
+                error=account_validation_error
+            )
+            return _build_runtime_result(
+                "error",
+                "broker_account_mismatch",
+                account_validation_error
+            )
 
         if interactive:
             print("MT5 Connected")
@@ -563,7 +647,12 @@ def start_live_trading(
                 detail="Scanning symbols and managing trades.",
                 daily_profit=get_daily_profit(),
                 account_number=acc.get("login"),
-                server=acc.get("server")
+                server=acc.get("server"),
+                broker=(
+                    None
+                    if broker_context is None
+                    else broker_context.get("id")
+                )
             )
 
             if interactive:
@@ -646,9 +735,12 @@ def start_live_trading(
                     )
 
                 print(f"Processing {symbol}")
+                symbol_meta = get_symbol_metadata(symbol)
                 log_event(
                     "symbol_processing_started",
-                    symbol=symbol
+                    symbol=symbol,
+                    canonical_symbol=symbol_meta["canonical"],
+                    mt5_symbol=symbol_meta["mt5"]
                 )
 
                 if is_trading_locked():
@@ -661,6 +753,8 @@ def start_live_trading(
                         "symbol_processing_stopped",
                         level="warning",
                         symbol=symbol,
+                        canonical_symbol=symbol_meta["canonical"],
+                        mt5_symbol=symbol_meta["mt5"],
                         reason="trading_locked"
                     )
 
@@ -699,6 +793,8 @@ def start_live_trading(
                         "symbol_processing_skipped",
                         level="warning",
                         symbol=symbol,
+                        canonical_symbol=symbol_meta["canonical"],
+                        mt5_symbol=symbol_meta["mt5"],
                         reason="market_unsafe"
                     )
 
@@ -770,11 +866,71 @@ def start_live_trading(
             mt5.shutdown()
             log_event("mt5_shutdown_complete")
 
+        if broker_context is not None:
+            clear_active_broker()
+            if previous_profile_env is None:
+                os.environ.pop(
+                    "BURRFX_TRADING_PROFILE",
+                    None
+                )
+            else:
+                os.environ["BURRFX_TRADING_PROFILE"] = (
+                    previous_profile_env
+                )
+
     return _build_runtime_result(
         "stopped",
         "stop_requested",
         "Live trading stopped."
     )
+
+
+def _initialize_mt5_for_broker(broker_context):
+
+    if broker_context is None:
+        return mt5.initialize()
+
+    return mt5.initialize(
+        path=broker_context["terminal_path"]
+    )
+
+
+def _validate_broker_account(broker_context):
+
+    if broker_context is None:
+        return None
+
+    account = mt5.account_info()
+
+    if account is None:
+        return "MT5 account info unavailable."
+
+    expected_login = broker_context.get(
+        "expected_login"
+    )
+    expected_server = str(
+        broker_context.get("expected_server") or ""
+    ).strip()
+
+    if (
+        expected_login not in ("", None)
+        and int(expected_login) != int(account.login)
+    ):
+        return (
+            f"Connected login {account.login} does not "
+            f"match expected login {expected_login}."
+        )
+
+    if (
+        expected_server
+        and expected_server != str(account.server)
+    ):
+        return (
+            f"Connected server {account.server} does not "
+            f"match expected server {expected_server}."
+        )
+
+    return None
 
 
 def get_trading_pause_reason():
@@ -1031,6 +1187,10 @@ def display_dashboard(
     active_symbols = get_session_symbols(verbose=False)
     strategy_lines = get_strategy_overview_lines()
     trading_profile = get_trading_profile_label()
+    from trading.broker_runtime import (
+        get_active_broker_label
+    )
+    broker_label = get_active_broker_label()
     trade_status = (
         "LOCKED"
         if is_trading_locked()
@@ -1059,6 +1219,8 @@ def display_dashboard(
     print(f"Target Remaining: {remaining:.2f}")
     print(f"Loss Buffer: {loss_buffer:.2f}")
     print(f"\nSTATUS: {trade_status}")
+    if broker_label:
+        print(f"Broker: {broker_label}")
     print(f"Profile: {trading_profile}")
     print(f"Session: {session_status}")
     print(f"Symbols: {', '.join(active_symbols) if active_symbols else 'None'}")

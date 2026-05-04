@@ -36,47 +36,36 @@ export function LogEntryCard({
 
   return (
     <View
+      className="gap-3 rounded-[24px] border p-[18px]"
       style={{
-        gap: 12,
-        borderRadius: 24,
         borderCurve: "continuous",
-        borderWidth: 1,
         borderColor: colors.borderSoft,
         backgroundColor: colors.panel,
-        padding: 18,
         boxShadow: colors.shadowMd,
       }}
     >
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <View style={{ flex: 1, gap: 6 }}>
+      <View className="flex-row items-start justify-between gap-3">
+        <View className="flex-1 gap-1.5">
           <Text
+            className="text-[18px] font-extrabold"
             selectable
             style={{
               color: colors.text,
-              fontSize: 18,
-              fontWeight: "800",
             }}
           >
             {entry.event}
           </Text>
           <Text
+            className="text-[12px] font-semibold uppercase tracking-[0.4px]"
             selectable
             style={{
               color: colors.textDim,
-              fontSize: 12,
-              fontWeight: "600",
-              textTransform: "uppercase",
-              letterSpacing: 0.4,
             }}
           >
-            {formatTimestamp(entry.timestamp)}{entry.source ? `  •  ${entry.source.split("\\").pop()}` : ""}
+            {formatTimestamp(entry.timestamp)}
+            {entry.source
+              ? ` | ${entry.source.split("\\").pop()}`
+              : ""}
           </Text>
         </View>
         <StatusPill
@@ -86,11 +75,10 @@ export function LogEntryCard({
       </View>
 
       <Text
+        className="text-[14px] leading-5"
         selectable
         style={{
           color: colors.textMuted,
-          fontSize: 14,
-          lineHeight: 20,
         }}
       >
         {entry.message}
@@ -98,20 +86,17 @@ export function LogEntryCard({
 
       {contextText ? (
         <View
+          className="rounded-[18px] p-3"
           style={{
-            borderRadius: 18,
             borderCurve: "continuous",
             backgroundColor: colors.surfaceRaised,
-            padding: 12,
           }}
         >
           <Text
+            className="font-mono text-[12px] leading-[18px]"
             selectable
             style={{
               color: colors.text,
-              fontSize: 12,
-              lineHeight: 18,
-              fontFamily: "monospace",
             }}
           >
             {contextText}

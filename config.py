@@ -47,6 +47,7 @@ DAILY_TARGET = 150
 # =========================
 FAST_MA = 5
 SLOW_MA = 50
+MA_CROSSOVER_LOOKBACK_BARS = 3
 ATR_PERIOD = 14     # ATR multiplier for trailing stop    # Daily profit target (15% of balance)
 
 # =========================
@@ -180,4 +181,6 @@ NEWS_LOOKBACK_MINUTES = 2
 NEWS_MAX_EVENT_AGE_SECONDS = 90
 NEWS_FETCH_AHEAD_SECONDS = 30
 NEWS_MIN_VOLATILITY = "HIGH"
+NEWS_MIN_RELATIVE_SURPRISE = 0.05
+NEWS_MIN_RATE_SURPRISE = 0.10
 FXSTREET_API_CULTURE = "en"

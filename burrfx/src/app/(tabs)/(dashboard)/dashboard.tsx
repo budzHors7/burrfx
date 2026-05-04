@@ -64,7 +64,7 @@ export default function DashboardScreen() {
       }}
       contentInsetAdjustmentBehavior="automatic"
     >
-      <View style={{ gap: 18 }}>
+      <View className="gap-[18px]">
         <PageHeading
           accessory={
             <StatusPill
@@ -78,46 +78,32 @@ export default function DashboardScreen() {
         />
 
         <View
+          className="gap-4 rounded-[30px] p-5"
           style={{
-            gap: 16,
-            borderRadius: 30,
             borderCurve: "continuous",
             backgroundColor: colors.surface,
-            padding: 20,
             boxShadow: colors.shadowLg,
           }}
         >
-          <View style={{ gap: 6 }}>
+          <View className="gap-1.5">
             <Text
+              className="text-[22px] font-extrabold"
               selectable
-              style={{
-                color: colors.text,
-                fontSize: 22,
-                fontWeight: "800",
-              }}
+              style={{ color: colors.text }}
             >
               Account overview
             </Text>
             <Text
+              className="text-[14px] leading-5"
               selectable
-              style={{
-                color: colors.textMuted,
-                fontSize: 14,
-                lineHeight: 20,
-              }}
+              style={{ color: colors.textMuted }}
             >
               These live values come directly from the BurrFx API session that
               is holding the MT5 connection for this account.
             </Text>
           </View>
 
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              gap: 12,
-            }}
-          >
+          <View className="flex-row flex-wrap gap-3">
             <MetricCard
               label="Balance"
               value={formatCurrency(account?.balance, currency)}
@@ -145,44 +131,27 @@ export default function DashboardScreen() {
         </View>
 
         <View
+          className="gap-4 rounded-[30px] border p-5"
           style={{
-            gap: 16,
-            borderRadius: 30,
             borderCurve: "continuous",
-            borderWidth: 1,
             borderColor: colors.borderSoft,
             backgroundColor: colors.panel,
-            padding: 20,
             boxShadow: colors.shadowLg,
           }}
         >
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-            }}
-          >
-            <View style={{ gap: 6, flex: 1 }}>
+          <View className="flex-row flex-wrap items-center justify-between gap-3">
+            <View className="flex-1 gap-1.5">
               <Text
+                className="text-[22px] font-extrabold"
                 selectable
-                style={{
-                  color: colors.text,
-                  fontSize: 22,
-                  fontWeight: "800",
-                }}
+                style={{ color: colors.text }}
               >
                 Bot runtime
               </Text>
               <Text
+                className="text-[14px] leading-5"
                 selectable
-                style={{
-                  color: colors.textMuted,
-                  fontSize: 14,
-                  lineHeight: 20,
-                }}
+                style={{ color: colors.textMuted }}
               >
                 Start, stop, refresh, and inspect the live runtime information
                 coming from the server-side controller.
@@ -194,7 +163,7 @@ export default function DashboardScreen() {
             />
           </View>
 
-          <View style={{ gap: 12 }}>
+          <View className="gap-3">
             <DetailRow
               label="Runtime detail"
               value={botStatus?.detail ?? "Waiting for the next action."}
@@ -227,14 +196,8 @@ export default function DashboardScreen() {
             />
           </View>
 
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              gap: 12,
-            }}
-          >
-            <View style={{ minWidth: "47%", flexGrow: 1 }}>
+          <View className="flex-row flex-wrap gap-3">
+            <View className="min-w-[47%] flex-1">
               <ActionButton
                 label="Start Bot"
                 disabled={Boolean(botStatus?.running)}
@@ -246,7 +209,7 @@ export default function DashboardScreen() {
                 }}
               />
             </View>
-            <View style={{ minWidth: "47%", flexGrow: 1 }}>
+            <View className="min-w-[47%] flex-1">
               <ActionButton
                 label="Stop Bot"
                 variant="danger"
@@ -261,7 +224,7 @@ export default function DashboardScreen() {
                 }}
               />
             </View>
-            <View style={{ minWidth: "47%", flexGrow: 1 }}>
+            <View className="min-w-[47%] flex-1">
               <ActionButton
                 label="Refresh"
                 variant="secondary"
@@ -273,7 +236,7 @@ export default function DashboardScreen() {
                 }}
               />
             </View>
-            <View style={{ minWidth: "47%", flexGrow: 1 }}>
+            <View className="min-w-[47%] flex-1">
               <ActionButton
                 label="Sign Out"
                 variant="secondary"
@@ -293,35 +256,26 @@ export default function DashboardScreen() {
         </View>
 
         <View
+          className="gap-[18px] rounded-[30px] border p-5"
           style={{
-            gap: 18,
-            borderRadius: 30,
             borderCurve: "continuous",
-            borderWidth: 1,
             borderColor: colors.borderSoft,
             backgroundColor: colors.panelMuted,
-            padding: 20,
             boxShadow: colors.shadowMd,
           }}
         >
-          <View style={{ gap: 6 }}>
+          <View className="gap-1.5">
             <Text
+              className="text-[22px] font-extrabold"
               selectable
-              style={{
-                color: colors.text,
-                fontSize: 22,
-                fontWeight: "800",
-              }}
+              style={{ color: colors.text }}
             >
               Appearance and connection
             </Text>
             <Text
+              className="text-[14px] leading-5"
               selectable
-              style={{
-                color: colors.textMuted,
-                fontSize: 14,
-                lineHeight: 20,
-              }}
+              style={{ color: colors.textMuted }}
             >
               Pick the app theme you want, then review the account and server
               details for the active session.
@@ -331,13 +285,13 @@ export default function DashboardScreen() {
           <ThemeModePicker />
 
           <View
+            className="h-px"
             style={{
-              height: 1,
               backgroundColor: colors.borderSoft,
             }}
           />
 
-          <View style={{ gap: 12 }}>
+          <View className="gap-3">
             <DetailRow
               label="Account number"
               value={account ? String(account.login) : "--"}
@@ -386,33 +340,25 @@ export default function DashboardScreen() {
 
         {errorMessage ? (
           <View
+            className="gap-2 rounded-[22px] p-[18px]"
             style={{
-              gap: 8,
-              borderRadius: 22,
               borderCurve: "continuous",
               backgroundColor: colors.errorBackground,
-              padding: 18,
             }}
           >
             <Text
+              className="text-[13px] font-bold uppercase tracking-[0.4px]"
               selectable
               style={{
                 color: colors.danger,
-                fontSize: 13,
-                fontWeight: "700",
-                textTransform: "uppercase",
-                letterSpacing: 0.4,
               }}
             >
               Server message
             </Text>
             <Text
+              className="text-[14px] leading-5"
               selectable
-              style={{
-                color: colors.text,
-                fontSize: 14,
-                lineHeight: 20,
-              }}
+              style={{ color: colors.text }}
             >
               {errorMessage}
             </Text>
@@ -434,37 +380,23 @@ function DetailRow({
 
   return (
     <View
+      className="flex-row items-start justify-between gap-3 pb-2.5"
       style={{
-        flexDirection: "row",
-        alignItems: "flex-start",
-        justifyContent: "space-between",
-        gap: 12,
         borderBottomWidth: 1,
         borderBottomColor: colors.borderSoft,
-        paddingBottom: 10,
       }}
     >
       <Text
+        className="text-[13px] font-semibold uppercase tracking-[0.4px]"
         selectable
-        style={{
-          color: colors.textDim,
-          fontSize: 13,
-          fontWeight: "600",
-          textTransform: "uppercase",
-          letterSpacing: 0.4,
-        }}
+        style={{ color: colors.textDim }}
       >
         {label}
       </Text>
       <Text
+        className="flex-1 text-right text-[15px] font-semibold"
         selectable
-        style={{
-          flex: 1,
-          textAlign: "right",
-          color: colors.text,
-          fontSize: 15,
-          fontWeight: "600",
-        }}
+        style={{ color: colors.text }}
       >
         {value}
       </Text>

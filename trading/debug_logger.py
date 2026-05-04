@@ -106,6 +106,7 @@ def log_event(
 ):
 
     logger = _get_logger()
+    context = _with_broker_context(context)
 
     message = "%s | %s" % (
         event,
@@ -117,6 +118,31 @@ def log_event(
     )
 
     getattr(logger, level.lower(), logger.info)(message)
+
+
+def _with_broker_context(context):
+
+    if "broker" in context:
+        return context
+
+    try:
+        from trading.broker_runtime import (
+            get_active_broker_id,
+            get_active_broker_label
+        )
+
+        broker_id = get_active_broker_id()
+
+        if broker_id is None:
+            return context
+
+        enriched = context.copy()
+        enriched["broker"] = broker_id
+        enriched["broker_label"] = get_active_broker_label()
+        return enriched
+
+    except Exception:
+        return context
 
 
 def log_mt5_error(

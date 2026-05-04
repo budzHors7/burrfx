@@ -15,6 +15,9 @@ export const tradingProfileOptions: readonly TradingProfileOption[] = [
     use_take_profit: true,
     use_break_even: true,
     use_trailing_stop: false,
+    safe_floating_profit_percent: 2,
+    max_positions_per_symbol: 3,
+    addon_spacing_atr: 1,
   },
   {
     id: "regular_risk",
@@ -27,6 +30,9 @@ export const tradingProfileOptions: readonly TradingProfileOption[] = [
     use_take_profit: true,
     use_break_even: true,
     use_trailing_stop: true,
+    safe_floating_profit_percent: 2,
+    max_positions_per_symbol: 3,
+    addon_spacing_atr: 1,
   },
   {
     id: "highly_risky",
@@ -39,6 +45,9 @@ export const tradingProfileOptions: readonly TradingProfileOption[] = [
     use_take_profit: false,
     use_break_even: true,
     use_trailing_stop: true,
+    safe_floating_profit_percent: 2,
+    max_positions_per_symbol: 3,
+    addon_spacing_atr: 1,
   },
 ] as const;
 

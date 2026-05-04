@@ -1,9 +1,14 @@
+import re
+
 import MetaTrader5 as mt5
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 
 from config import (
     ATR_PERIOD,
+    MA_CROSSOVER_LOOKBACK_BARS,
+    NEWS_MIN_RATE_SURPRISE,
+    NEWS_MIN_RELATIVE_SURPRISE,
     NEWS_PROVIDER,
     SLOW_MA,
     SMC_DISPLACEMENT_ATR,
@@ -20,8 +25,7 @@ from trading.news_provider import build_news_cycle_context
 from trading.strategy_settings import get_strategy_settings
 from trading.trade_manager import (
     calculate_atr,
-    calculate_moving_averages,
-    check_crossover
+    calculate_moving_averages
 )
 
 
@@ -122,8 +126,6 @@ RISK_ON_EVENT_KEYWORDS = (
     "pmi",
     "employment",
     "payroll",
-    "jobless claims",
-    "claims",
     "consumer confidence",
     "confidence",
     "durable goods",
@@ -150,6 +152,19 @@ HAWKISH_EVENT_KEYWORDS = (
     "wage",
     "earnings"
 )
+INVERSE_EVENT_KEYWORDS = (
+    "unemployment rate",
+    "unemployment",
+    "jobless claims",
+    "initial claims",
+    "continuing claims",
+    "claims"
+)
+NEWS_VALUE_MULTIPLIERS = {
+    "K": 1_000,
+    "M": 1_000_000,
+    "B": 1_000_000_000
+}
 
 
 def get_strategy_catalog():
@@ -347,12 +362,30 @@ def evaluate_strategy_signal(
             working_df
         )
 
-        signal = check_crossover(working_df)
+        signal, crossover_age, crossover_time = (
+            _find_recent_ma_crossover(
+                working_df,
+                MA_CROSSOVER_LOOKBACK_BARS
+            )
+        )
 
         if signal is not None:
-            reason = (
-                "Fast/slow moving average crossover."
-            )
+            if crossover_age == 0:
+                reason = (
+                    "Fast/slow moving average crossover "
+                    "on the latest closed candle."
+                )
+            else:
+                reason = (
+                    "Fast/slow moving average crossover "
+                    f"{crossover_age} closed candles ago."
+                )
+            context = {
+                "setup": "ma_crossover",
+                "crossover_age_bars": crossover_age,
+                "crossover_time": crossover_time,
+                "lookback_bars": MA_CROSSOVER_LOOKBACK_BARS
+            }
 
     elif strategy["id"] == "trendline_price_action":
 
@@ -551,6 +584,57 @@ def check_trendline_price_action(df):
     return None, None, {}
 
 
+def _find_recent_ma_crossover(
+    df,
+    lookback_bars
+):
+
+    if len(df) < SLOW_MA + 1:
+        return None, None, None
+
+    max_lookback = min(
+        max(int(lookback_bars), 1),
+        len(df) - 1
+    )
+
+    for age in range(max_lookback):
+
+        current_index = len(df) - 1 - age
+        previous_index = current_index - 1
+        prev = df.iloc[previous_index]
+        curr = df.iloc[current_index]
+
+        if (
+            pd.isna(prev["ma_fast"])
+            or pd.isna(prev["ma_slow"])
+            or pd.isna(curr["ma_fast"])
+            or pd.isna(curr["ma_slow"])
+        ):
+            continue
+
+        if (
+            prev["ma_fast"] <= prev["ma_slow"]
+            and curr["ma_fast"] > curr["ma_slow"]
+        ):
+            return (
+                "BUY",
+                age,
+                _extract_row_time(curr)
+            )
+
+        if (
+            prev["ma_fast"] >= prev["ma_slow"]
+            and curr["ma_fast"] < curr["ma_slow"]
+        ):
+            return (
+                "SELL",
+                age,
+                _extract_row_time(curr)
+            )
+
+    return None, None, None
+
+
 def check_smc_liquidity_sweep(df):
 
     minimum_bars = max(
@@ -709,7 +793,10 @@ def check_high_impact_news(
 
     for event in news_events:
 
-        event_id = event.get("id")
+        event_id = (
+            event.get("id")
+            or event.get("event_id")
+        )
 
         if not event_id:
             continue
@@ -720,31 +807,33 @@ def check_high_impact_news(
         ):
             continue
 
-        signal = _map_news_event_to_symbol(
+        decision = _evaluate_news_event_for_symbol(
             symbol,
             event
         )
 
-        if signal is None:
+        if decision is None:
             continue
+
+        signal = decision["signal"]
 
         _mark_news_signal_processed(
             symbol,
             event_id
         )
 
-        better_or_worse = (
-            "better"
-            if event["is_better_than_expected"]
-            else "worse"
+        surprise_direction = decision.get(
+            "surprise_direction",
+            "better" if decision["currency_bullish"] else "worse"
         )
+        forecast = event.get("consensus")
 
         return (
             signal,
             (
                 f"High impact {event['currency_code']} news "
                 f"triggered by {event['name']} "
-                f"({better_or_worse} than expected)."
+                f"({surprise_direction} than forecast)."
             ),
             {
                 "setup": "high_impact_news",
@@ -753,10 +842,19 @@ def check_high_impact_news(
                 "currency_code": event["currency_code"],
                 "event_time_utc": event["date_utc"],
                 "actual": event["actual"],
-                "consensus": event["consensus"],
-                "previous": event["previous"],
+                "forecast": forecast,
+                "consensus": forecast,
+                "previous": event.get("previous"),
+                "surprise": decision.get("surprise"),
+                "relative_surprise": decision.get(
+                    "relative_surprise"
+                ),
+                "surprise_direction": surprise_direction,
+                "event_class": decision["event_class"],
+                "decision_source": decision["decision_source"],
+                "currency_bullish": decision["currency_bullish"],
                 "is_better_than_expected": (
-                    event["is_better_than_expected"]
+                    event.get("is_better_than_expected")
                 ),
                 "provider": cycle_context.get(
                     "provider",
@@ -768,20 +866,145 @@ def check_high_impact_news(
     return None, None, {}
 
 
+def _evaluate_news_event_for_symbol(
+    symbol,
+    event
+):
+
+    impact = _evaluate_news_event_impact(event)
+
+    if impact is None:
+        return None
+
+    signal = _map_news_impact_to_symbol(
+        symbol,
+        event,
+        impact
+    )
+
+    if signal is None:
+        return None
+
+    decision = impact.copy()
+    decision["signal"] = signal
+
+    return decision
+
+
+def _evaluate_news_event_impact(event):
+
+    event_class = _classify_news_event(event)
+    actual_value = _parse_news_value(
+        event.get("actual")
+    )
+    forecast_value = _parse_news_value(
+        event.get("consensus")
+    )
+
+    if (
+        actual_value is not None
+        and forecast_value is not None
+        and event_class is not None
+    ):
+        surprise = actual_value - forecast_value
+
+        if surprise == 0:
+            _log_news_event_skip(
+                event,
+                "actual_equals_forecast"
+            )
+            return None
+
+        relative_surprise = _calculate_relative_surprise(
+            surprise,
+            forecast_value
+        )
+
+        if not _surprise_meets_threshold(
+            surprise,
+            relative_surprise,
+            event
+        ):
+            _log_news_event_skip(
+                event,
+                "surprise_below_threshold",
+                surprise=float(surprise),
+                relative_surprise=relative_surprise
+            )
+            return None
+
+        higher_than_forecast = surprise > 0
+        currency_bullish = _event_class_currency_bullish(
+            event_class,
+            higher_than_forecast
+        )
+
+        return {
+            "currency_bullish": currency_bullish,
+            "event_class": event_class,
+            "decision_source": "actual_vs_forecast",
+            "surprise": float(surprise),
+            "relative_surprise": (
+                None
+                if relative_surprise is None
+                else float(relative_surprise)
+            ),
+            "surprise_direction": (
+                "better" if currency_bullish else "worse"
+            )
+        }
+
+    provider_flag = event.get(
+        "is_better_than_expected"
+    )
+
+    if provider_flag is None:
+        _log_news_event_skip(
+            event,
+            "missing_value_decision"
+        )
+        return None
+
+    currency_bullish = bool(provider_flag)
+
+    return {
+        "currency_bullish": currency_bullish,
+        "event_class": event_class or "provider_fallback",
+        "decision_source": "provider_flag",
+        "surprise": None,
+        "relative_surprise": None,
+        "surprise_direction": (
+            "better" if currency_bullish else "worse"
+        )
+    }
+
+
 def _map_news_event_to_symbol(
     symbol,
     event
 ):
 
-    better = event.get(
-        "is_better_than_expected"
+    impact = _evaluate_news_event_impact(event)
+
+    if impact is None:
+        return None
+
+    return _map_news_impact_to_symbol(
+        symbol,
+        event,
+        impact
     )
 
-    if better is None:
-        return None
+
+def _map_news_impact_to_symbol(
+    symbol,
+    event,
+    impact
+):
 
     cleaned_symbol = _clean_symbol(symbol)
     currency_code = event["currency_code"]
+    currency_bullish = impact["currency_bullish"]
 
     pair = _extract_currency_pair(
         cleaned_symbol
@@ -792,10 +1015,10 @@ def _map_news_event_to_symbol(
         base_currency, quote_currency = pair
 
         if currency_code == base_currency:
-            return "BUY" if better else "SELL"
+            return "BUY" if currency_bullish else "SELL"
 
         if currency_code == quote_currency:
-            return "SELL" if better else "BUY"
+            return "SELL" if currency_bullish else "BUY"
 
         return None
 
@@ -806,23 +1029,168 @@ def _map_news_event_to_symbol(
     if mapped_currency != currency_code:
         return None
 
+    event_class = impact["event_class"]
+
+    if event_class == "hawkish":
+        return "SELL" if currency_bullish else "BUY"
+
+    if event_class in (
+        "risk_on",
+        "inverse",
+        "provider_fallback"
+    ):
+        return "BUY" if currency_bullish else "SELL"
+
+    return None
+
+
+def _classify_news_event(event):
+
     event_name = str(
         event.get("name", "")
     ).lower()
 
     if _contains_keyword(
         event_name,
+        INVERSE_EVENT_KEYWORDS
+    ):
+        return "inverse"
+
+    if _contains_keyword(
+        event_name,
         HAWKISH_EVENT_KEYWORDS
     ):
-        return "SELL" if better else "BUY"
+        return "hawkish"
 
     if _contains_keyword(
         event_name,
         RISK_ON_EVENT_KEYWORDS
     ):
-        return "BUY" if better else "SELL"
+        return "risk_on"
 
     return None
+
+
+def _event_class_currency_bullish(
+    event_class,
+    higher_than_forecast
+):
+
+    if event_class == "inverse":
+        return not higher_than_forecast
+
+    return higher_than_forecast
+
+
+def _parse_news_value(value):
+
+    if value is None:
+        return None
+
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    text = str(value).strip()
+
+    if not text:
+        return None
+
+    cleaned = text.replace(",", "")
+    match = re.search(
+        r"[-+]?\d*\.?\d+",
+        cleaned
+    )
+
+    if match is None:
+        return None
+
+    number = float(match.group(0))
+    suffix_text = cleaned[match.end():].strip().upper()
+
+    if suffix_text:
+        suffix = suffix_text[0]
+        number *= NEWS_VALUE_MULTIPLIERS.get(
+            suffix,
+            1
+        )
+
+    return number
+
+
+def _calculate_relative_surprise(
+    surprise,
+    forecast_value
+):
+
+    if forecast_value == 0:
+        return None
+
+    return abs(surprise) / abs(forecast_value)
+
+
+def _surprise_meets_threshold(
+    surprise,
+    relative_surprise,
+    event
+):
+
+    absolute_surprise = abs(surprise)
+
+    if _is_rate_or_percentage_event(event):
+        return absolute_surprise >= NEWS_MIN_RATE_SURPRISE
+
+    if relative_surprise is None:
+        return absolute_surprise > 0
+
+    return relative_surprise >= NEWS_MIN_RELATIVE_SURPRISE
+
+
+def _is_rate_or_percentage_event(event):
+
+    unit = str(
+        event.get("unit", "")
+    ).lower()
+    event_name = str(
+        event.get("name", "")
+    ).lower()
+
+    return (
+        "%" in unit
+        or "percent" in unit
+        or "rate" in event_name
+        or _contains_keyword(
+            event_name,
+            (
+                "cpi",
+                "ppi",
+                "pce",
+                "gdp",
+                "inflation",
+                "retail sales",
+                "wage",
+                "earnings"
+            )
+        )
+    )
+
+
+def _log_news_event_skip(
+    event,
+    reason,
+    **extra_context
+):
+
+    log_event(
+        "news_event_skipped",
+        event_id=(
+            event.get("id")
+            or event.get("event_id")
+        ),
+        event_name=event.get("name"),
+        currency_code=event.get("currency_code"),
+        reason=reason,
+        **extra_context
+    )
 
 
 def _clean_symbol(symbol):
@@ -1168,7 +1536,20 @@ def _extract_candle_time(df):
     if "time" not in df.columns:
         return None
 
-    value = df["time"].iloc[-1]
+    return _normalize_time_value(
+        df["time"].iloc[-1]
+    )
+
+
+def _extract_row_time(row):
+
+    if "time" not in row:
+        return None
+
+    return _normalize_time_value(row["time"])
+
+
+def _normalize_time_value(value):
 
     if isinstance(value, pd.Timestamp):
         return int(value.timestamp())

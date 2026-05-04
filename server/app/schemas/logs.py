@@ -14,5 +14,9 @@ class AccountLogEntry(BaseModel):
 
 class AccountLogsResponse(BaseModel):
     count: int
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
     source_file: str | None = None
     entries: list[AccountLogEntry] = Field(default_factory=list)

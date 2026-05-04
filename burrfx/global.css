@@ -1,0 +1,24 @@
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css";
+
+@import "nativewind/theme";
+
+@source "./src";
+
+:root {
+  --app-background: #f4f8fb;
+  --app-background-soft: #eaf1f6;
+  --app-surface: #ffffff;
+  --app-surface-raised: #eef4f9;
+  --app-surface-alt: #dde9f3;
+  --app-panel: rgba(255, 255, 255, 0.96);
+  --app-panel-muted: rgba(246, 250, 253, 0.96);
+  --app-text: #122536;
+  --app-text-muted: #4e687d;
+  --app-text-dim: #70879b;
+  --app-input: #f6fafd;
+  --app-error-bg: rgba(217, 75, 90, 0.1);
+  --app-hero-secondary: rgba(20, 151, 101, 0.08);
+  --app-tabbar: #fbfdff;
+}

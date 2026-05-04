@@ -13,6 +13,9 @@ export type TradingProfileOption = {
   use_take_profit: boolean;
   use_break_even: boolean;
   use_trailing_stop: boolean;
+  safe_floating_profit_percent: number;
+  max_positions_per_symbol: number;
+  addon_spacing_atr: number;
 };
 
 export type AuthSessionResponse = {
@@ -53,6 +56,10 @@ export type AccountLogEntry = {
 
 export type AccountLogsResponse = {
   count: number;
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
   source_file?: string | null;
   entries: AccountLogEntry[];
 };

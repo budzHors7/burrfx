@@ -422,6 +422,15 @@ class MT5SessionService:
             use_trailing_stop=bool(
                 trading_profile["use_trailing_stop"]
             ),
+            safe_floating_profit_percent=float(
+                trading_profile["safe_floating_profit_percent"]
+            ),
+            max_positions_per_symbol=int(
+                trading_profile["max_positions_per_symbol"]
+            ),
+            addon_spacing_atr=float(
+                trading_profile["addon_spacing_atr"]
+            ),
         )
 
 

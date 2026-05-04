@@ -30,44 +30,33 @@ export function JournalEntryCard({
 
   return (
     <View
+      className="gap-[14px] rounded-[24px] border p-[18px]"
       style={{
-        gap: 14,
-        borderRadius: 24,
         borderCurve: "continuous",
-        borderWidth: 1,
         borderColor: colors.borderSoft,
         backgroundColor: colors.panel,
-        padding: 18,
         boxShadow: colors.shadowMd,
       }}
     >
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <View style={{ gap: 6, flex: 1 }}>
+      <View className="flex-row items-start justify-between gap-3">
+        <View className="flex-1 gap-1.5">
           <Text
+            className="text-[18px] font-extrabold"
             selectable
             style={{
               color: colors.text,
-              fontSize: 18,
-              fontWeight: "800",
             }}
           >
             {formatTimestamp(entry.recorded_at)}
           </Text>
           <Text
+            className="text-[13px]"
             selectable
             style={{
               color: colors.textMuted,
-              fontSize: 13,
             }}
           >
-            Account #{entry.account_login} • {entry.server}
+            Account #{entry.account_login} | {entry.server}
           </Text>
         </View>
         <StatusPill
@@ -76,13 +65,7 @@ export function JournalEntryCard({
         />
       </View>
 
-      <View
-        style={{
-          flexDirection: "row",
-          flexWrap: "wrap",
-          gap: 10,
-        }}
-      >
+      <View className="flex-row flex-wrap gap-2.5">
         <JournalMetric
           label="Balance"
           value={formatCurrency(entry.balance, entry.currency ?? "USD")}
@@ -122,35 +105,26 @@ function JournalMetric({
 
   return (
     <View
+      className="min-w-[47%] flex-1 gap-1 rounded-[16px] px-3 py-2.5"
       style={{
-        minWidth: "47%",
-        flexGrow: 1,
-        gap: 4,
-        borderRadius: 16,
         borderCurve: "continuous",
         backgroundColor: colors.surfaceRaised,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
       }}
     >
       <Text
+        className="text-[11px] font-bold uppercase tracking-[0.5px]"
         selectable
         style={{
           color: colors.textDim,
-          fontSize: 11,
-          fontWeight: "700",
-          textTransform: "uppercase",
-          letterSpacing: 0.5,
         }}
       >
         {label}
       </Text>
       <Text
+        className="text-[14px] font-extrabold"
         selectable
         style={{
           color: valueColor ?? colors.text,
-          fontSize: 14,
-          fontWeight: "800",
         }}
       >
         {value}

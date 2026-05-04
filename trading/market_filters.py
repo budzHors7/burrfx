@@ -13,6 +13,9 @@ from config import (
     ROLLOVER_BUFFER_MINUTES
 )
 from trading.debug_logger import log_event
+from trading.broker_runtime import (
+    get_active_broker_symbols
+)
 from trading.trading_settings import (
     get_trading_settings
 )
@@ -24,8 +27,18 @@ from trading.trading_settings import (
 
 def check_spread(symbol):
 
-    tick = mt5.symbol_info_tick(symbol)
     settings = get_trading_settings()
+
+    if settings.get("bypass_spread_filter", False):
+        log_event(
+            "spread_check_bypassed",
+            symbol=symbol,
+            profile=settings["id"],
+            reason="profile_bypass_spread_filter"
+        )
+        return True
+
+    tick = mt5.symbol_info_tick(symbol)
     max_spread_points = settings[
         "max_spread_points"
     ]
@@ -124,6 +137,17 @@ def is_within_sessions(verbose=True):
     if not is_market_open(verbose=verbose):
         return False
 
+    settings = get_trading_settings()
+
+    if settings.get("bypass_session_filter", False):
+        if verbose:
+            log_event(
+                "session_filter_bypassed",
+                profile=settings["id"],
+                reason="profile_bypass_session_filter"
+            )
+        return True
+
     if not ENABLE_SESSION_FILTER:
         return True
 
@@ -207,6 +231,11 @@ def get_active_session_name():
     if not is_market_open(verbose=False):
         return None
 
+    settings = get_trading_settings()
+
+    if settings.get("bypass_session_filter", False):
+        return "all"
+
     if not ENABLE_SESSION_FILTER:
         return "all"
 
@@ -245,7 +274,12 @@ def get_active_session_label():
 
 def get_session_symbols(verbose=True):
 
-    configured_symbols = _unique_symbols(SYMBOLS)
+    broker_symbols = get_active_broker_symbols()
+    configured_symbols = _unique_symbols(
+        broker_symbols
+        if broker_symbols is not None
+        else SYMBOLS
+    )
     session_name = get_active_session_name()
 
     if session_name is None:
@@ -366,7 +400,8 @@ def market_is_safe(symbol, verbose=True):
 
     log_event(
         "market_safe_for_symbol",
-        symbol=symbol
+        symbol=symbol,
+        profile=get_trading_settings()["id"]
     )
 
     return True

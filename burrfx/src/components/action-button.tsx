@@ -28,22 +28,29 @@ export function ActionButton({
         : colors.accent;
 
   const textColor =
-    variant === "secondary" ? colors.text : colors.textOnAccent;
+    isDisabled
+      ? colors.textDim
+      : variant === "secondary"
+        ? colors.text
+        : colors.textOnAccent;
 
   return (
     <Pressable
       accessibilityRole="button"
+      className="min-h-14 flex-row items-center justify-center gap-2.5 rounded-[18px] px-[18px]"
       disabled={isDisabled}
       onPress={onPress}
       style={({ pressed }) => ({
-        minHeight: 54,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 10,
-        borderRadius: 18,
         borderCurve: "continuous",
-        paddingHorizontal: 18,
+        borderWidth: variant === "secondary" ? 1 : 0,
+        borderColor:
+          variant === "secondary"
+            ? isDisabled
+              ? colors.border
+              : colors.borderSoft
+            : variant === "danger"
+              ? colors.danger
+              : colors.accentDeep,
         backgroundColor: isDisabled
           ? colors.borderSoft
           : backgroundColor,
@@ -55,12 +62,10 @@ export function ActionButton({
         <ActivityIndicator color={textColor} />
       ) : null}
       <Text
+        className="text-[15px] font-bold tracking-[0.2px]"
         selectable
         style={{
           color: textColor,
-          fontSize: 15,
-          fontWeight: "700",
-          letterSpacing: 0.2,
         }}
       >
         {loading ? `${label}...` : label}

@@ -2,12 +2,17 @@ import { Redirect } from "expo-router";
 import { NativeTabs } from "expo-router/unstable-native-tabs";
 import { Platform } from "react-native";
 
+import { AuthCheckScreen } from "@/components/auth-check-screen";
 import { useAppSession } from "@/hooks/use-app-session";
 import { useAppTheme } from "@/hooks/use-app-theme";
 
 export default function TabsLayout() {
-  const { isAuthenticated } = useAppSession();
+  const { isAuthenticated, isHydrating } = useAppSession();
   const { colors } = useAppTheme();
+
+  if (isHydrating) {
+    return <AuthCheckScreen />;
+  }
 
   if (!isAuthenticated) {
     return <Redirect href="/" />;

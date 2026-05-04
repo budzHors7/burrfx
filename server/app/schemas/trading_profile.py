@@ -11,3 +11,6 @@ class TradingProfileResponse(BaseModel):
     use_take_profit: bool
     use_break_even: bool
     use_trailing_stop: bool
+    safe_floating_profit_percent: float
+    max_positions_per_symbol: int
+    addon_spacing_atr: float

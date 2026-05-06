@@ -9,6 +9,7 @@ The app currently supports:
 - trades tab
 - logs tab
 - journal tab
+- broker daily target/loss controls on the dashboard
 - Android floating trade window
 
 ## Stack
@@ -28,6 +29,7 @@ Implemented now:
 - Android auth screen uses a dedicated React Native auth view
 - auth persistence stores the last successful API URL and re-checks the active server session on launch
 - dashboard and trades are connected to the BurrFx API
+- dashboard broker settings read and save per-broker daily target/loss limits through the API
 - logs tab reads server-side account logs from the API
 - journal tab stores local account progress snapshots in SQLite
 - theme mode supports `system`, `light`, and `dark`
@@ -108,9 +110,10 @@ If you add or remove native Expo modules, rebuild the Android or iOS dev client 
 4. The server logs into MT5 on the Windows machine.
 5. After a successful login, the app opens the authenticated tabs.
 6. Dashboard shows account summary, bot state, theme controls, and bot start or stop actions.
-7. Trades shows open positions and, on Android, can show a floating trade window after permission is granted.
-8. Logs shows server-side account and runtime log entries.
-9. Journal shows the local SQLite account history snapshots captured while the app is tracking the account.
+7. Dashboard broker settings can save daily target/loss limits for each broker while the bot is stopped.
+8. Trades shows open positions and, on Android, can show a floating trade window after permission is granted.
+9. Logs shows server-side account and runtime log entries.
+10. Journal shows the local SQLite account history snapshots captured while the app is tracking the account.
 
 ## Important Notes
 
@@ -118,6 +121,7 @@ If you add or remove native Expo modules, rebuild the Android or iOS dev client 
 - The API is the only bridge between the app and MT5.
 - If the API is unreachable, the auth screen will show a connection error.
 - The selected trading profile is sent during login and persisted on the server so the bot uses the same profile as the terminal app.
+- Broker daily target/loss edits are saved by the API into the shared broker settings used by terminal, desktop, and mobile flows.
 - If you test on Android and the server is on your computer, do not use `localhost` inside the app unless the device can resolve it correctly.
 - The Android floating window only appears after the user allows draw-over-apps permission in system settings.
 

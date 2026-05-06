@@ -21,8 +21,12 @@ from config import (
     TRENDLINE_TOUCH_TOLERANCE_ATR
 )
 from trading.debug_logger import log_event
+from trading.broker_runtime import get_active_broker
 from trading.news_provider import build_news_cycle_context
-from trading.strategy_settings import get_strategy_settings
+from trading.strategy_settings import (
+    get_broker_strategy_settings,
+    get_strategy_settings
+)
 from trading.trade_manager import (
     calculate_atr,
     calculate_moving_averages
@@ -96,6 +100,29 @@ DEFAULT_STRATEGIES = {
             "M5"
         ],
         "bars": max(ATR_PERIOD + 30, 80)
+    },
+    "stochastic_oscillator": {
+        "name": "Stochastic Oscillator",
+        "comment_code": "STO",
+        "enabled": False,
+        "timeframe": "M5",
+        "recommended_timeframes": [
+            "M5"
+        ],
+        "bars": max(ATR_PERIOD + 30, 80),
+        "broker_scope": [
+            "deriv"
+        ],
+        "k_period": 5,
+        "d_period": 3,
+        "slowing": 3,
+        "upper_level": 75,
+        "lower_level": 25,
+        "price_field": "low_high",
+        "method": "simple",
+        "trades_per_signal": 5,
+        "max_positions_per_symbol": 25,
+        "use_take_profit": False
     }
 }
 
@@ -170,9 +197,41 @@ NEWS_VALUE_MULTIPLIERS = {
 def get_strategy_catalog():
 
     catalog = []
-    configured_settings = get_strategy_settings()
+    active_broker = get_active_broker()
+    active_broker_id = (
+        None
+        if active_broker is None
+        else active_broker.get("id")
+    )
 
-    for strategy_id, defaults in DEFAULT_STRATEGIES.items():
+    if (
+        active_broker is not None
+        and "strategy_settings" in active_broker
+    ):
+        configured_settings = get_broker_strategy_settings(
+            active_broker
+        )
+        strategy_ids = [
+            strategy_id
+            for strategy_id in DEFAULT_STRATEGIES
+            if strategy_id in configured_settings
+        ]
+    elif active_broker_id == "deriv":
+        configured_settings = {}
+        strategy_ids = []
+    else:
+        configured_settings = get_strategy_settings()
+        strategy_ids = [
+            strategy_id
+            for strategy_id, defaults in (
+                DEFAULT_STRATEGIES.items()
+            )
+            if not defaults.get("broker_scope")
+        ]
+
+    for strategy_id in strategy_ids:
+
+        defaults = DEFAULT_STRATEGIES[strategy_id]
 
         settings = configured_settings.get(
             strategy_id,
@@ -216,6 +275,15 @@ def get_strategy_catalog():
         strategy["bars"] = max(
             int(strategy.get("bars", defaults["bars"])),
             ATR_PERIOD + 5
+        )
+        strategy["trades_per_signal"] = _bounded_int(
+            strategy.get(
+                "trades_per_signal",
+                defaults.get("trades_per_signal", 1)
+            ),
+            default=1,
+            minimum=1,
+            maximum=5
         )
 
         catalog.append(strategy)
@@ -413,6 +481,16 @@ def evaluate_strategy_signal(
             )
         )
 
+    elif strategy["id"] == "stochastic_oscillator":
+
+        signal, reason, context = (
+            check_stochastic_oscillator(
+                working_df,
+                strategy,
+                symbol=symbol
+            )
+        )
+
     else:
         log_event(
             "strategy_signal_skipped",
@@ -442,7 +520,16 @@ def evaluate_strategy_signal(
         "atr": float(atr),
         "candle_time": candle_time,
         "reason": reason,
-        "context": context
+        "context": context,
+        "trades_per_signal": _bounded_int(
+            strategy.get("trades_per_signal"),
+            default=1,
+            minimum=1,
+            maximum=5
+        ),
+        "execution_overrides": _build_execution_overrides(
+            strategy
+        )
     }
 
 
@@ -633,6 +720,305 @@ def _find_recent_ma_crossover(
             )
 
     return None, None, None
+
+
+def calculate_stochastic_oscillator(
+    df,
+    k_period,
+    d_period,
+    slowing
+):
+
+    lowest_low = df["low"].rolling(k_period).min()
+    highest_high = df["high"].rolling(k_period).max()
+    price_range = highest_high - lowest_low
+    usable_range = price_range.where(
+        price_range > 0
+    )
+
+    df["stochastic_raw_k"] = (
+        (df["close"] - lowest_low)
+        / usable_range
+        * 100
+    )
+    df["stochastic_main"] = (
+        df["stochastic_raw_k"]
+        .rolling(slowing)
+        .mean()
+    )
+    df["stochastic_signal"] = (
+        df["stochastic_main"]
+        .rolling(d_period)
+        .mean()
+    )
+
+    return df
+
+
+def check_stochastic_oscillator(
+    df,
+    strategy,
+    symbol=None
+):
+
+    k_period = _positive_int(
+        strategy.get("k_period"),
+        5
+    )
+    d_period = _positive_int(
+        strategy.get("d_period"),
+        3
+    )
+    slowing = _positive_int(
+        strategy.get("slowing"),
+        3
+    )
+    upper_level = _float_value(
+        strategy.get("upper_level"),
+        75
+    )
+    lower_level = _float_value(
+        strategy.get("lower_level"),
+        25
+    )
+    price_field = str(
+        strategy.get("price_field", "low_high")
+    ).lower()
+    method = str(
+        strategy.get("method", "simple")
+    ).lower()
+
+    if (
+        price_field != "low_high"
+        or method != "simple"
+    ):
+        _log_deriv_stochastic_diagnostic(
+            symbol,
+            strategy,
+            decision="skipped",
+            decision_reason="unsupported_stochastic_settings",
+            price_field=price_field,
+            method=method
+        )
+        return None, None, {}
+
+    minimum_bars = (
+        k_period
+        + slowing
+        + d_period
+        - 1
+    )
+
+    if len(df) < minimum_bars:
+        _log_deriv_stochastic_diagnostic(
+            symbol,
+            strategy,
+            decision="skipped",
+            decision_reason="insufficient_bars",
+            bars=len(df),
+            minimum_bars=minimum_bars
+        )
+        return None, None, {}
+
+    working_df = calculate_stochastic_oscillator(
+        df.copy(),
+        k_period,
+        d_period,
+        slowing
+    )
+    previous = working_df.iloc[-2]
+    current = working_df.iloc[-1]
+    required_columns = [
+        "stochastic_main",
+        "stochastic_signal"
+    ]
+
+    if any(
+        pd.isna(previous[column])
+        or pd.isna(current[column])
+        for column in required_columns
+    ):
+        _log_deriv_stochastic_diagnostic(
+            symbol,
+            strategy,
+            decision="skipped",
+            decision_reason="stochastic_values_not_ready",
+            previous_main=_safe_float(
+                previous["stochastic_main"]
+            ),
+            previous_signal=_safe_float(
+                previous["stochastic_signal"]
+            ),
+            main=_safe_float(
+                current["stochastic_main"]
+            ),
+            signal=_safe_float(
+                current["stochastic_signal"]
+            )
+        )
+        return None, None, {}
+
+    previous_main = float(
+        previous["stochastic_main"]
+    )
+    previous_signal = float(
+        previous["stochastic_signal"]
+    )
+    current_main = float(
+        current["stochastic_main"]
+    )
+    current_signal = float(
+        current["stochastic_signal"]
+    )
+
+    context = {
+        "setup": "stochastic_oscillator",
+        "main": current_main,
+        "signal": current_signal,
+        "previous_main": previous_main,
+        "previous_signal": previous_signal,
+        "upper_level": upper_level,
+        "lower_level": lower_level,
+        "k_period": k_period,
+        "d_period": d_period,
+        "slowing": slowing,
+        "price_field": price_field,
+        "method": method
+    }
+
+    current_overbought = (
+        current_main > upper_level
+        and current_signal > upper_level
+    )
+    previous_overbought = (
+        previous_main > upper_level
+        and previous_signal > upper_level
+    )
+    current_oversold = (
+        current_main < lower_level
+        and current_signal < lower_level
+    )
+    previous_oversold = (
+        previous_main < lower_level
+        and previous_signal < lower_level
+    )
+    sell_cross = (
+        previous_main >= previous_signal
+        and current_main < current_signal
+    )
+    buy_cross = (
+        previous_main <= previous_signal
+        and current_main > current_signal
+    )
+    diagnostic_context = {
+        **context,
+        "sell_cross": sell_cross,
+        "buy_cross": buy_cross,
+        "current_overbought": current_overbought,
+        "previous_overbought": previous_overbought,
+        "current_oversold": current_oversold,
+        "previous_oversold": previous_oversold,
+        "allowed_symbol_signal": (
+            _get_deriv_stochastic_allowed_signal(
+                symbol
+            )
+        )
+    }
+
+    if (
+        sell_cross
+        and current_overbought
+    ):
+        if not _deriv_stochastic_signal_allowed(
+            symbol,
+            "SELL"
+        ):
+            _log_deriv_stochastic_diagnostic(
+                symbol,
+                strategy,
+                decision="no_signal",
+                decision_reason=(
+                    "sell_signal_not_allowed_for_symbol"
+                ),
+                **diagnostic_context
+            )
+            return None, None, {}
+
+        context["zone_candle"] = (
+            "current"
+        )
+        _log_deriv_stochastic_diagnostic(
+            symbol,
+            strategy,
+            decision="sell_signal",
+            decision_reason="sell_cross_in_overbought_zone",
+            **{
+                **diagnostic_context,
+                "zone_candle": context["zone_candle"]
+            }
+        )
+        return (
+            "SELL",
+            "Stochastic %K crossed below %D above the 75 level.",
+            context
+        )
+
+    if (
+        buy_cross
+        and current_oversold
+    ):
+        if not _deriv_stochastic_signal_allowed(
+            symbol,
+            "BUY"
+        ):
+            _log_deriv_stochastic_diagnostic(
+                symbol,
+                strategy,
+                decision="no_signal",
+                decision_reason=(
+                    "buy_signal_not_allowed_for_symbol"
+                ),
+                **diagnostic_context
+            )
+            return None, None, {}
+
+        context["zone_candle"] = (
+            "current"
+        )
+        _log_deriv_stochastic_diagnostic(
+            symbol,
+            strategy,
+            decision="buy_signal",
+            decision_reason="buy_cross_in_oversold_zone",
+            **{
+                **diagnostic_context,
+                "zone_candle": context["zone_candle"]
+            }
+        )
+        return (
+            "BUY",
+            "Stochastic %K crossed above %D below the 25 level.",
+            context
+        )
+
+    if not sell_cross and not buy_cross:
+        decision_reason = "no_main_signal_cross"
+    elif sell_cross:
+        decision_reason = "sell_cross_without_overbought_zone"
+    elif buy_cross:
+        decision_reason = "buy_cross_without_oversold_zone"
+    else:
+        decision_reason = "no_signal"
+
+    _log_deriv_stochastic_diagnostic(
+        symbol,
+        strategy,
+        decision="no_signal",
+        decision_reason=decision_reason,
+        **diagnostic_context
+    )
+
+    return None, None, {}
 
 
 def check_smc_liquidity_sweep(df):
@@ -1236,6 +1622,164 @@ def _contains_keyword(
     return any(
         keyword in text
         for keyword in keywords
+    )
+
+
+def _positive_int(
+    value,
+    fallback
+):
+
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        return int(fallback)
+
+    if normalized <= 0:
+        return int(fallback)
+
+    return normalized
+
+
+def _bounded_int(
+    value,
+    default,
+    minimum,
+    maximum
+):
+
+    normalized = _positive_int(
+        value,
+        default
+    )
+
+    return max(
+        int(minimum),
+        min(
+            int(maximum),
+            normalized
+        )
+    )
+
+
+def _float_value(
+    value,
+    fallback
+):
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(fallback)
+
+
+def _safe_float(value):
+
+    try:
+        if pd.isna(value):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_execution_overrides(strategy):
+
+    overrides = {}
+
+    if "use_take_profit" in strategy:
+        overrides["use_take_profit"] = bool(
+            strategy.get("use_take_profit")
+        )
+
+    if "max_positions_per_symbol" in strategy:
+        overrides["max_positions_per_symbol"] = (
+            _bounded_int(
+                strategy.get("max_positions_per_symbol"),
+                default=5,
+                minimum=1,
+                maximum=25
+            )
+        )
+
+    return overrides
+
+
+def _deriv_stochastic_signal_allowed(
+    symbol,
+    signal
+):
+
+    allowed_signal = (
+        _get_deriv_stochastic_allowed_signal(
+            symbol
+        )
+    )
+
+    if allowed_signal is None:
+        return True
+
+    return allowed_signal == signal
+
+
+def _get_deriv_stochastic_allowed_signal(symbol):
+
+    active_broker = get_active_broker()
+
+    if (
+        active_broker is None
+        or active_broker.get("id") != "deriv"
+    ):
+        return None
+
+    symbol_key = "".join(
+        char
+        for char in str(symbol).upper()
+        if char.isalnum()
+    )
+
+    if symbol_key in (
+        "CRASH1000",
+        "CRASH1000INDEX"
+    ):
+        return "BUY"
+
+    if symbol_key in (
+        "BOOM1000",
+        "BOOM1000INDEX"
+    ):
+        return "SELL"
+
+    return None
+
+
+def _log_deriv_stochastic_diagnostic(
+    symbol,
+    strategy,
+    decision,
+    decision_reason,
+    **context
+):
+
+    active_broker = get_active_broker()
+
+    if (
+        active_broker is None
+        or active_broker.get("id") != "deriv"
+    ):
+        return
+
+    log_event(
+        "deriv_stochastic_diagnostic",
+        symbol=symbol,
+        strategy=strategy.get("id"),
+        timeframe=strategy.get("timeframe"),
+        decision=decision,
+        decision_reason=decision_reason,
+        trades_per_signal=strategy.get(
+            "trades_per_signal"
+        ),
+        **context
     )
 
 

@@ -1,8 +1,18 @@
 import json
 import os
 
+from config import (
+    DAILY_TARGET,
+    ENABLE_DAILY_LOCK,
+    MAX_DAILY_LOSS
+)
 from logo import show_logo
 from trading.debug_logger import log_event
+from trading.strategy_settings import (
+    broker_strategy_config_has_enabled_strategy,
+    get_default_broker_strategy_settings,
+    get_enabled_broker_strategy_names
+)
 from utils import clear_screen, pause
 
 
@@ -15,6 +25,11 @@ SETTINGS_FILE = os.path.join(
     PROJECT_ROOT,
     "broker_settings.json"
 )
+DEFAULT_DAILY_LIMITS = {
+    "enabled": bool(ENABLE_DAILY_LOCK),
+    "target": float(DAILY_TARGET),
+    "max_loss": float(MAX_DAILY_LOSS)
+}
 BROKER_ORDER = [
     "exness",
     "deriv"
@@ -28,6 +43,7 @@ DEFAULT_SETTINGS = {
             "expected_login": None,
             "expected_server": "",
             "trading_profile": "regular_risk",
+            "daily_limits": DEFAULT_DAILY_LIMITS.copy(),
             "symbols": [
                 {
                     "canonical": "EURUSD",
@@ -73,7 +89,23 @@ DEFAULT_SETTINGS = {
             "expected_login": None,
             "expected_server": "",
             "trading_profile": "regular_risk",
-            "symbols": []
+            "max_spread_points": 25000,
+            "daily_limits": DEFAULT_DAILY_LIMITS.copy(),
+            "symbols": [
+                {
+                    "canonical": "BOOM1000",
+                    "mt5": "Boom 1000 Index",
+                    "enabled": True
+                },
+                {
+                    "canonical": "CRASH1000",
+                    "mt5": "Crash 1000 Index",
+                    "enabled": True
+                }
+            ],
+            "strategy_settings": get_default_broker_strategy_settings(
+                "deriv"
+            )
         }
     }
 }
@@ -212,6 +244,93 @@ def set_broker_enabled(
     )
 
 
+def set_broker_daily_limits(
+    broker_id,
+    daily_limits
+):
+
+    settings = load_broker_settings()
+    brokers = settings.setdefault(
+        "brokers",
+        {}
+    )
+
+    if broker_id not in brokers:
+        raise ValueError(
+            f"Unknown broker: {broker_id}"
+        )
+
+    normalized_limits = normalize_daily_limits(
+        daily_limits
+    )
+    brokers[broker_id]["daily_limits"] = (
+        normalized_limits
+    )
+    save_broker_settings(settings)
+
+    log_event(
+        "broker_daily_limits_updated",
+        broker_id=broker_id,
+        daily_limits=normalized_limits
+    )
+
+    return normalized_limits
+
+
+def get_broker_daily_limits(broker=None):
+
+    if broker is None:
+        return normalize_daily_limits()
+
+    return normalize_daily_limits(
+        broker.get("daily_limits")
+    )
+
+
+def normalize_daily_limits(daily_limits=None):
+
+    normalized = DEFAULT_DAILY_LIMITS.copy()
+
+    if daily_limits is None:
+        return normalized
+
+    if not isinstance(daily_limits, dict):
+        raise ValueError(
+            "Daily limits must be an object."
+        )
+
+    if "enabled" in daily_limits:
+        normalized["enabled"] = bool(
+            daily_limits["enabled"]
+        )
+
+    if "target" in daily_limits:
+        normalized["target"] = _normalize_money_limit(
+            daily_limits["target"],
+            "Daily target",
+            must_be_positive=True
+        )
+
+    if "daily_target" in daily_limits:
+        normalized["target"] = _normalize_money_limit(
+            daily_limits["daily_target"],
+            "Daily target",
+            must_be_positive=True
+        )
+
+    if "max_loss" in daily_limits:
+        normalized["max_loss"] = _normalize_daily_loss(
+            daily_limits["max_loss"]
+        )
+
+    if "max_daily_loss" in daily_limits:
+        normalized["max_loss"] = _normalize_daily_loss(
+            daily_limits["max_daily_loss"]
+        )
+
+    return normalized
+
+
 def validate_broker_config(broker):
 
     errors = []
@@ -243,10 +362,11 @@ def validate_broker_config(broker):
 
     if (
         broker.get("id") == "deriv"
-        and _contains_strategy_keys(broker)
+        and not broker_strategy_config_has_enabled_strategy(broker)
     ):
-        errors.append(
-            "Deriv broker settings must not contain strategies."
+        warnings.append(
+            "No enabled Deriv strategy configured. "
+            "The broker worker will pause."
         )
 
     return {
@@ -270,12 +390,7 @@ def broker_requires_strategy_pause(broker):
 
     return (
         broker.get("id") == "deriv"
-        and not os.path.exists(
-            os.path.join(
-                PROJECT_ROOT,
-                "deriv_strategy_settings.json"
-            )
-        )
+        and not broker_strategy_config_has_enabled_strategy(broker)
     )
 
 
@@ -318,9 +433,32 @@ def broker_settings_menu():
                 f"   Symbols: "
                 f"{len(get_enabled_symbol_entries(broker))}"
             )
+            strategy_names = get_enabled_broker_strategy_names(
+                broker
+            )
+            if strategy_names:
+                print(
+                    "   Strategies: "
+                    + ", ".join(strategy_names)
+                )
             print(
                 f"   Terminal: "
                 f"{broker.get('terminal_path') or 'Not set'}"
+            )
+            daily_limits = get_broker_daily_limits(
+                broker
+            )
+            print(
+                "   Daily lock: "
+                + (
+                    "ON"
+                    if daily_limits["enabled"]
+                    else "OFF"
+                )
+                + (
+                    f" | Target: {daily_limits['target']:.2f}"
+                    f" | Loss: {daily_limits['max_loss']:.2f}"
+                )
             )
 
             for warning in validation["warnings"]:
@@ -330,6 +468,7 @@ def broker_settings_menu():
                 print(f"   Error: {error}")
 
         print("\nSelect broker number to toggle active/off.")
+        print("D. Edit broker daily target/loss")
         print("V. Validate active brokers")
         print("B. Back to main menu")
 
@@ -350,6 +489,10 @@ def broker_settings_menu():
                 get_enabled_brokers()
             )
             pause()
+            continue
+
+        if choice == "D":
+            _daily_limits_menu(brokers)
             continue
 
         if not choice.isdigit():
@@ -404,6 +547,107 @@ def _print_validation_summary(brokers):
             print(f"  Error: {error}")
 
 
+def _daily_limits_menu(brokers):
+
+    if not brokers:
+        print("\nNo broker settings found.")
+        pause()
+        return
+
+    print("\nDAILY TARGET / LOSS")
+    print("===================\n")
+
+    for index, broker in enumerate(
+        brokers,
+        start=1
+    ):
+        daily_limits = get_broker_daily_limits(
+            broker
+        )
+        state = (
+            "ON"
+            if daily_limits["enabled"]
+            else "OFF"
+        )
+        print(
+            f"{index}. {broker['label']} [{state}] "
+            f"Target {daily_limits['target']:.2f} | "
+            f"Loss {daily_limits['max_loss']:.2f}"
+        )
+
+    choice = input(
+        "\nSelect broker number or B to go back: "
+    ).strip().upper()
+
+    if choice == "B":
+        return
+
+    if not choice.isdigit():
+        print("\nInvalid selection.")
+        pause()
+        return
+
+    index = int(choice)
+
+    if index < 1 or index > len(brokers):
+        print("\nInvalid selection.")
+        pause()
+        return
+
+    broker = brokers[index - 1]
+    current_limits = get_broker_daily_limits(
+        broker
+    )
+    enabled_input = input(
+        "Enable daily lock for this broker? "
+        f"[Y/N, current {'Y' if current_limits['enabled'] else 'N'}]: "
+    ).strip().upper()
+    enabled = current_limits["enabled"]
+
+    if enabled_input in ("Y", "YES"):
+        enabled = True
+    elif enabled_input in ("N", "NO"):
+        enabled = False
+
+    target_input = input(
+        "Daily profit target "
+        f"[current {current_limits['target']:.2f}]: "
+    ).strip()
+    loss_input = input(
+        "Daily loss limit "
+        f"[current {abs(current_limits['max_loss']):.2f}]: "
+    ).strip()
+
+    try:
+        saved_limits = set_broker_daily_limits(
+            broker["id"],
+            {
+                "enabled": enabled,
+                "target": (
+                    current_limits["target"]
+                    if not target_input
+                    else target_input
+                ),
+                "max_loss": (
+                    current_limits["max_loss"]
+                    if not loss_input
+                    else loss_input
+                )
+            }
+        )
+    except ValueError as exc:
+        print(f"\n{exc}")
+        pause()
+        return
+
+    print(
+        f"\n{broker['label']} daily limits saved: "
+        f"target {saved_limits['target']:.2f}, "
+        f"loss {saved_limits['max_loss']:.2f}."
+    )
+    pause()
+
+
 def _normalize_settings(settings):
 
     normalized = _clone_settings(DEFAULT_SETTINGS)
@@ -426,8 +670,25 @@ def _normalize_settings(settings):
                 broker_id,
                 {}
             ).copy()
+            if (
+                broker_id == "deriv"
+                and "strategy_settings" not in base
+            ):
+                base["strategy_settings"] = (
+                    get_default_broker_strategy_settings(
+                        broker_id
+                    )
+                )
             base.update(broker)
+            base["daily_limits"] = normalize_daily_limits(
+                base.get("daily_limits")
+            )
             normalized["brokers"][broker_id] = base
+
+    for broker in normalized["brokers"].values():
+        broker["daily_limits"] = normalize_daily_limits(
+            broker.get("daily_limits")
+        )
 
     return normalized
 
@@ -448,6 +709,19 @@ def _prepare_broker(
         for symbol in prepared.get("symbols", [])
         if isinstance(symbol, dict)
     ]
+    prepared["strategy_settings"] = {
+        strategy_id: strategy.copy()
+        for strategy_id, strategy in (
+            prepared.get(
+                "strategy_settings",
+                {}
+            ).items()
+        )
+        if isinstance(strategy, dict)
+    }
+    prepared["daily_limits"] = normalize_daily_limits(
+        prepared.get("daily_limits")
+    )
 
     return prepared
 
@@ -469,3 +743,42 @@ def _contains_strategy_keys(broker):
             "strategy_overrides"
         )
     )
+
+
+def _normalize_money_limit(
+    value,
+    label,
+    must_be_positive=False
+):
+
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{label} must be a number."
+        ) from exc
+
+    if (
+        must_be_positive
+        and numeric_value <= 0
+    ):
+        raise ValueError(
+            f"{label} must be greater than zero."
+        )
+
+    return numeric_value
+
+
+def _normalize_daily_loss(value):
+
+    numeric_value = _normalize_money_limit(
+        value,
+        "Daily loss"
+    )
+
+    if numeric_value == 0:
+        raise ValueError(
+            "Daily loss must be greater than zero."
+        )
+
+    return -abs(numeric_value)

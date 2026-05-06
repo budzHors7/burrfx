@@ -14,6 +14,7 @@ from config import (
 )
 from trading.debug_logger import log_event
 from trading.broker_runtime import (
+    get_active_broker,
     get_active_broker_symbols
 )
 from trading.trading_settings import (
@@ -39,9 +40,9 @@ def check_spread(symbol):
         return True
 
     tick = mt5.symbol_info_tick(symbol)
-    max_spread_points = settings[
-        "max_spread_points"
-    ]
+    max_spread_points = _get_effective_max_spread_points(
+        settings
+    )
 
     if tick is None:
         log_event(
@@ -102,6 +103,37 @@ def check_spread(symbol):
     )
 
     return True
+
+
+def _get_effective_max_spread_points(settings):
+
+    profile_limit = settings[
+        "max_spread_points"
+    ]
+    broker = get_active_broker()
+
+    if (
+        broker is None
+        or broker.get("id") != "deriv"
+    ):
+        return profile_limit
+
+    broker_limit = broker.get(
+        "max_spread_points"
+    )
+
+    if broker_limit in (None, ""):
+        return profile_limit
+
+    try:
+        broker_limit = float(broker_limit)
+    except (TypeError, ValueError):
+        return profile_limit
+
+    if broker_limit <= 0:
+        return profile_limit
+
+    return broker_limit
 
 
 # =========================

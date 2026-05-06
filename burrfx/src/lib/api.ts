@@ -5,6 +5,9 @@ import type {
   AuthLoginResponse,
   AuthLogoutResponse,
   AuthSessionResponse,
+  BrokerDailyLimitsUpdatePayload,
+  BrokerDailyLimitsUpdateResponse,
+  BrokerSettingsResponse,
   BotControlResponse,
   BotStatusResponse,
   OpenTradesResponse,
@@ -219,6 +222,26 @@ export const api = {
     return requestJson<BotStatusResponse>(
       baseUrl,
       "/bot/status"
+    );
+  },
+  getBrokerSettings(baseUrl: string) {
+    return requestJson<BrokerSettingsResponse>(
+      baseUrl,
+      "/settings/brokers"
+    );
+  },
+  updateBrokerDailyLimits(
+    baseUrl: string,
+    brokerId: string,
+    payload: BrokerDailyLimitsUpdatePayload
+  ) {
+    return requestJson<BrokerDailyLimitsUpdateResponse>(
+      baseUrl,
+      `/settings/brokers/${encodeURIComponent(brokerId)}/daily-limits`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }
     );
   },
   startBot(baseUrl: string) {

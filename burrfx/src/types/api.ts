@@ -130,3 +130,31 @@ export type BotControlResponse = {
   message: string;
   status: BotStatusResponse;
 };
+
+export type BrokerDailyLimits = {
+  enabled: boolean;
+  target: number;
+  max_loss: number;
+};
+
+export type BrokerSettingsSummary = {
+  id: string;
+  label: string;
+  enabled: boolean;
+  daily_limits: BrokerDailyLimits;
+};
+
+export type BrokerSettingsResponse = {
+  brokers: BrokerSettingsSummary[];
+};
+
+export type BrokerDailyLimitsUpdatePayload = {
+  enabled: boolean;
+  target: number;
+  max_loss: number;
+};
+
+export type BrokerDailyLimitsUpdateResponse = {
+  broker_id: string;
+  daily_limits: BrokerDailyLimits;
+};

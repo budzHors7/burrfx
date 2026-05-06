@@ -66,7 +66,7 @@ const flowSteps = [
   {
     label: "02",
     title: "Strategy engine",
-    body: "Evaluate MA crossovers, trendline price action, SMC liquidity sweeps, and news signals per timeframe.",
+    body: "Evaluate MA crossovers, trendline price action, SMC liquidity sweeps, stochastic crosses, and news signals per timeframe.",
     meta: "Python runtime",
     icon: Bot,
   },
@@ -96,7 +96,7 @@ const flowSteps = [
 const strategyCards: Feature[] = [
   {
     title: "Multi-signal engine",
-    body: "Run trendline, MA, SMC, and high-impact news logic from one strategy catalog.",
+    body: "Run trendline, MA, SMC, high-impact news, and broker-scoped stochastic logic from one strategy catalog.",
     icon: LineChart,
   },
   {
@@ -119,8 +119,27 @@ const strategyCards: Feature[] = [
 const riskRows = [
   "Spread and session filters",
   "Daily lock, target, and loss limits",
+  "Closed-trade P/L with commission, swap, and fee accounting",
   "ATR-based stop, break-even, and trailing logic",
   "Position caps per symbol",
+];
+
+const latestChanges: Feature[] = [
+  {
+    title: "Desktop settings",
+    body: "Control trading profiles, global strategies, active brokers, and broker-specific strategy toggles from the BurrFx desktop app.",
+    icon: SlidersHorizontal,
+  },
+  {
+    title: "Deriv strategy mode",
+    body: "Deriv can now run a dedicated Stochastic Oscillator setup for Boom 1000 and Crash 1000 Index symbols.",
+    icon: CandlestickChart,
+  },
+  {
+    title: "Cleaner risk accounting",
+    body: "Daily P/L now focuses on trade deals and includes profit, commission, swap, and fee values before risk locks respond.",
+    icon: ShieldCheck,
+  },
 ];
 
 const androidAppUrl =
@@ -135,8 +154,13 @@ const deployItems: DeployFeature[] = [
   },
   {
     title: "FastAPI control layer",
-    body: "Serve health checks, auth session state, account logs, open trades, and bot controls.",
+    body: "Serve health checks, auth session state, account logs, open trades, bot controls, and saveable settings.",
     icon: Server,
+  },
+  {
+    title: "Broker-aware settings",
+    body: "Switch Exness and Deriv availability, restore strategy defaults, and keep Deriv scoped to its allowed stochastic setup.",
+    icon: SlidersHorizontal,
   },
   {
     title: "Mobile companion app",
@@ -146,6 +170,37 @@ const deployItems: DeployFeature[] = [
       href: androidAppUrl,
       label: "Download Android app",
     },
+  },
+];
+
+const affiliatePartners = [
+  {
+    title: "Exness",
+    body: "Placeholder area for the Exness affiliate offer, onboarding copy, account setup notes, and campaign link.",
+    placeholder: "Exness affiliate link placeholder",
+    logo: {
+      alt: "Exness logo",
+      className: "h-6 w-36",
+      height: 24,
+      src: "/broker-exness.svg",
+      width: 144,
+    },
+    logoSurface:
+      "border border-black/10 bg-white text-[#141d22] shadow-[0_10px_28px_rgba(8,11,10,0.06)]",
+  },
+  {
+    title: "Deriv",
+    body: "Placeholder area for the Deriv affiliate offer, synthetic indices setup notes, and campaign link.",
+    placeholder: "Deriv affiliate link placeholder",
+    logo: {
+      alt: "Deriv logo",
+      className: "h-6 w-[73px]",
+      height: 24,
+      src: "/broker-deriv.svg",
+      width: 73,
+    },
+    logoSurface:
+      "border border-[#ff444f]/30 bg-[#ff444f] shadow-[0_10px_28px_rgba(255,68,79,0.24)]",
   },
 ];
 
@@ -539,6 +594,47 @@ export default function Home() {
       </section>
 
       <section
+        id="latest"
+        className="bg-white px-5 py-16 sm:px-8 lg:px-10"
+      >
+        <div className="mx-auto max-w-7xl">
+          <div className="grid gap-8 lg:grid-cols-[0.72fr_1.28fr] lg:items-end">
+            <div>
+              <SectionLabel>Latest changes</SectionLabel>
+              <h2 className="text-4xl font-black leading-none sm:text-6xl">
+                Sharper desktop, broker, and risk controls.
+              </h2>
+            </div>
+            <p className="max-w-2xl text-lg leading-8 text-black/64">
+              The newest BurrFx work focuses on configurable bot settings,
+              broker-specific strategy behavior, and daily risk numbers that
+              better match the account history that matters.
+            </p>
+          </div>
+
+          <div className="mt-9 grid gap-4 md:grid-cols-3">
+            {latestChanges.map((item) => (
+              <article
+                className="rounded-[8px] border border-black/10 bg-[#f4f1e8] p-5"
+                key={item.title}
+              >
+                <item.icon
+                  aria-hidden="true"
+                  className="mb-8 text-[#1f66ff]"
+                  size={34}
+                  strokeWidth={2.4}
+                />
+                <h3 className="text-xl font-black">{item.title}</h3>
+                <p className="mt-3 text-sm leading-6 text-black/62">
+                  {item.body}
+                </p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section
         id="risk"
         className="bg-[#080b0a] px-5 py-16 text-white sm:px-8 lg:px-10"
       >
@@ -679,6 +775,57 @@ export default function Home() {
             involves risk. BurrFx is a control and automation surface, not a
             guarantee of results.
           </p>
+        </div>
+      </section>
+
+      <section
+        id="affiliates"
+        className="border-y border-black/10 bg-white px-5 py-16 sm:px-8 lg:px-10"
+      >
+        <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.86fr_1.14fr] lg:items-start">
+          <div>
+            <SectionLabel>Affiliates</SectionLabel>
+            <h2 className="text-4xl font-black leading-none sm:text-6xl">
+              Broker affiliation placements for Exness and Deriv.
+            </h2>
+            <p className="mt-6 max-w-xl text-lg leading-8 text-black/64">
+              These placements are ready for partner URLs, campaign details,
+              and onboarding copy once the affiliate assets are finalized.
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            {affiliatePartners.map((partner) => (
+              <article
+                className="rounded-[8px] border border-black/10 bg-[#f4f1e8] p-5 shadow-[0_14px_44px_rgba(8,11,10,0.06)]"
+                key={partner.title}
+              >
+                <div className="mb-8 flex items-start justify-between gap-4">
+                  <div
+                    className={`flex h-14 min-w-44 items-center rounded-[8px] px-4 ${partner.logoSurface}`}
+                  >
+                    <Image
+                      alt={partner.logo.alt}
+                      className={partner.logo.className}
+                      height={partner.logo.height}
+                      src={partner.logo.src}
+                      width={partner.logo.width}
+                    />
+                  </div>
+                  <span className="rounded-[6px] bg-black/[0.06] px-2 py-1 text-xs font-black uppercase text-black/58">
+                    Placeholder
+                  </span>
+                </div>
+                <h3 className="text-3xl font-black">{partner.title}</h3>
+                <p className="mt-3 text-sm leading-6 text-black/62">
+                  {partner.body}
+                </p>
+                <div className="mt-6 rounded-[6px] border border-dashed border-black/24 bg-white px-3 py-3 text-sm font-black text-black/58">
+                  {partner.placeholder}
+                </div>
+              </article>
+            ))}
+          </div>
         </div>
       </section>
 

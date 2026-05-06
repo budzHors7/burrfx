@@ -23,6 +23,9 @@ import type {
   AccountOverviewResponse,
   AuthLoginResponse,
   AuthSessionResponse,
+  BrokerDailyLimitsUpdatePayload,
+  BrokerDailyLimitsUpdateResponse,
+  BrokerSettingsResponse,
   BotStatusResponse,
   OpenTradeItem,
   TradingProfileId,
@@ -44,6 +47,7 @@ type AppSessionContextValue = {
   account: AccountOverviewResponse | null;
   trades: OpenTradeItem[];
   botStatus: BotStatusResponse | null;
+  brokerSettings: BrokerSettingsResponse | null;
   journalRevision: number;
   errorMessage: string | null;
   isHydrating: boolean;
@@ -54,6 +58,11 @@ type AppSessionContextValue = {
   login: (input: LoginInput) => Promise<AuthLoginResponse>;
   logout: () => Promise<void>;
   refreshAll: (options?: { silent?: boolean }) => Promise<void>;
+  refreshBrokerSettings: () => Promise<void>;
+  saveBrokerDailyLimits: (
+    brokerId: string,
+    payload: BrokerDailyLimitsUpdatePayload
+  ) => Promise<BrokerDailyLimitsUpdateResponse>;
   startBot: () => Promise<void>;
   stopBot: () => Promise<void>;
   clearError: () => void;
@@ -93,6 +102,8 @@ export function AppSessionProvider({
   const [account, setAccount] = useState<AccountOverviewResponse | null>(null);
   const [trades, setTrades] = useState<OpenTradeItem[]>([]);
   const [botStatus, setBotStatus] = useState<BotStatusResponse | null>(null);
+  const [brokerSettings, setBrokerSettings] =
+    useState<BrokerSettingsResponse | null>(null);
   const [journalRevision, setJournalRevision] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isHydrating, setIsHydrating] = useState(() =>
@@ -123,13 +134,15 @@ export function AppSessionProvider({
     nextSession: AuthSessionResponse,
     nextAccount: AccountOverviewResponse | null,
     nextTrades: OpenTradeItem[],
-    nextBotStatus: BotStatusResponse | null
+    nextBotStatus: BotStatusResponse | null,
+    nextBrokerSettings: BrokerSettingsResponse | null
   ) {
     startTransition(() => {
       setSession(nextSession);
       setAccount(nextAccount);
       setTrades(nextTrades);
       setBotStatus(nextBotStatus);
+      setBrokerSettings(nextBrokerSettings);
     });
   }
 
@@ -144,20 +157,26 @@ export function AppSessionProvider({
       startTransition(() => {
         setSession(null);
         setBotStatus(null);
+        setBrokerSettings(null);
       });
       clearAuthedData();
       return;
     }
 
     const nextSession = await api.getSession(targetBaseUrl);
-    const nextBotStatus = await api.getBotStatus(targetBaseUrl);
+    const [nextBotStatus, nextBrokerSettings] =
+      await Promise.all([
+        api.getBotStatus(targetBaseUrl),
+        api.getBrokerSettings(targetBaseUrl),
+      ]);
 
     if (!nextSession.authenticated) {
       applySnapshot(
         nextSession,
         null,
         [],
-        nextBotStatus
+        nextBotStatus,
+        nextBrokerSettings
       );
       return;
     }
@@ -172,7 +191,8 @@ export function AppSessionProvider({
       nextSession,
       nextAccount,
       nextTrades.trades,
-      nextBotStatus
+      nextBotStatus,
+      nextBrokerSettings
     );
   }
 
@@ -222,6 +242,7 @@ export function AppSessionProvider({
                 }
               : current
           );
+          setBrokerSettings(null);
         });
         clearAuthedData();
       }
@@ -299,6 +320,7 @@ export function AppSessionProvider({
       startTransition(() => {
         setSession(null);
         setBotStatus(null);
+        setBrokerSettings(null);
       });
       return;
     }
@@ -311,6 +333,7 @@ export function AppSessionProvider({
       startTransition(() => {
         setSession(response.session);
         setBotStatus(null);
+        setBrokerSettings(null);
       });
       clearAuthedData();
     } catch (error) {
@@ -342,6 +365,85 @@ export function AppSessionProvider({
         setBotStatus(response.status);
       });
       await refreshAll({ silent: true });
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+      throw error;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function refreshBrokerSettings() {
+    const targetBaseUrl = api.normalizeBaseUrl(apiBaseUrl);
+
+    if (!targetBaseUrl) {
+      const error = new ApiError(
+        "Add the API URL before loading broker settings.",
+        0
+      );
+      setErrorMessage(error.message);
+      throw error;
+    }
+
+    setIsRefreshing(true);
+    setErrorMessage(null);
+
+    try {
+      const response = await api.getBrokerSettings(targetBaseUrl);
+      startTransition(() => {
+        setBrokerSettings(response);
+      });
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+      throw error;
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
+
+  async function saveBrokerDailyLimits(
+    brokerId: string,
+    payload: BrokerDailyLimitsUpdatePayload
+  ) {
+    const targetBaseUrl = api.normalizeBaseUrl(apiBaseUrl);
+
+    if (!targetBaseUrl) {
+      const error = new ApiError(
+        "Add the API URL before saving broker daily limits.",
+        0
+      );
+      setErrorMessage(error.message);
+      throw error;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage(null);
+
+    try {
+      const response = await api.updateBrokerDailyLimits(
+        targetBaseUrl,
+        brokerId,
+        payload
+      );
+
+      startTransition(() => {
+        setBrokerSettings((current) =>
+          current
+            ? {
+                brokers: current.brokers.map((broker) =>
+                  broker.id === brokerId
+                    ? {
+                        ...broker,
+                        daily_limits: response.daily_limits,
+                      }
+                    : broker
+                ),
+              }
+            : current
+        );
+      });
+
+      return response;
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
       throw error;
@@ -555,6 +657,7 @@ export function AppSessionProvider({
     account,
     trades,
     botStatus,
+    brokerSettings,
     journalRevision,
     errorMessage,
     isHydrating,
@@ -569,6 +672,8 @@ export function AppSessionProvider({
     login,
     logout,
     refreshAll,
+    refreshBrokerSettings,
+    saveBrokerDailyLimits,
     startBot,
     stopBot,
     clearError() {

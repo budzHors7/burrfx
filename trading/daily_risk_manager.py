@@ -4,9 +4,11 @@ from datetime import datetime
 
 from config import (
     DAILY_TARGET,
+    ENABLE_DAILY_LOCK,
     MAX_DAILY_LOSS,
-    ENABLE_DAILY_LOCK
 )
+from trading.broker_runtime import get_active_broker
+from trading.broker_settings import get_broker_daily_limits
 from trading.debug_logger import log_event, log_mt5_error
 
 
@@ -20,6 +22,11 @@ daily_profit = 0
 
 trading_locked = False
 last_logged_daily_profit = None
+
+TRADE_DEAL_TYPES = {
+    mt5.DEAL_TYPE_BUY,
+    mt5.DEAL_TYPE_SELL
+}
 
 
 def reset_daily_if_needed():
@@ -69,7 +76,10 @@ def update_daily_profit():
 
     for d in deals:
 
-        profit += d.profit
+        if not _is_trade_deal(d):
+            continue
+
+        profit += _deal_amount(d)
 
     daily_profit = profit
 
@@ -77,7 +87,12 @@ def update_daily_profit():
         log_event(
             "daily_profit_updated",
             daily_profit=daily_profit,
-            deal_count=len(deals)
+            deal_count=len(deals),
+            trade_deal_count=len([
+                d
+                for d in deals
+                if _is_trade_deal(d)
+            ])
         )
         last_logged_daily_profit = daily_profit
 
@@ -86,10 +101,18 @@ def check_daily_limits():
 
     global trading_locked
 
-    if not ENABLE_DAILY_LOCK:
+    daily_limits = get_daily_limits()
+
+    if (
+        not ENABLE_DAILY_LOCK
+        or not daily_limits["enabled"]
+    ):
         return False
 
-    if daily_profit >= DAILY_TARGET:
+    daily_target = daily_limits["target"]
+    max_daily_loss = daily_limits["max_loss"]
+
+    if daily_profit >= daily_target:
 
         trading_locked = True
 
@@ -98,12 +121,12 @@ def check_daily_limits():
             "daily_limit_reached",
             limit_type="target",
             daily_profit=daily_profit,
-            daily_target=DAILY_TARGET
+            daily_target=daily_target
         )
 
         return True
 
-    if daily_profit <= MAX_DAILY_LOSS:
+    if daily_profit <= max_daily_loss:
 
         trading_locked = True
 
@@ -112,7 +135,7 @@ def check_daily_limits():
             "daily_limit_reached",
             limit_type="loss",
             daily_profit=daily_profit,
-            max_daily_loss=MAX_DAILY_LOSS
+            max_daily_loss=max_daily_loss
         )
 
         return True
@@ -128,3 +151,47 @@ def is_trading_locked():
 def get_daily_profit():
 
     return daily_profit
+
+
+def get_daily_limits():
+
+    broker = get_active_broker()
+
+    if broker is not None:
+        return get_broker_daily_limits(
+            broker
+        )
+
+    return {
+        "enabled": bool(ENABLE_DAILY_LOCK),
+        "target": float(DAILY_TARGET),
+        "max_loss": float(MAX_DAILY_LOSS)
+    }
+
+
+def _is_trade_deal(deal):
+
+    return getattr(deal, "type", None) in TRADE_DEAL_TYPES
+
+
+def _deal_amount(deal):
+
+    return sum(
+        _numeric_deal_value(deal, field)
+        for field in (
+            "profit",
+            "commission",
+            "swap",
+            "fee"
+        )
+    )
+
+
+def _numeric_deal_value(deal, field):
+
+    value = getattr(deal, field, 0.0) or 0.0
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0

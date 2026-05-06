@@ -22,6 +22,9 @@ from trading.trading_settings import (
 )
 
 
+DERIV_TIGHT_SL_ATR_MULTIPLIER = 0.50
+
+
 # ===================================
 # MOVING AVERAGES
 # ===================================
@@ -353,33 +356,336 @@ def _trade_entry_is_allowed(
     }
 
 
+def _build_initial_stop_loss(
+    symbol,
+    order_type,
+    price,
+    atr,
+    settings
+):
+
+    atr_stop = _build_atr_initial_stop_loss(
+        order_type,
+        price,
+        atr,
+        settings
+    )
+
+    if not _uses_deriv_tight_initial_stop(symbol):
+        return atr_stop
+
+    price_rules = _get_symbol_price_rules(symbol)
+
+    if price_rules is None:
+        log_event(
+            "deriv_initial_stop_defaulted",
+            level="warning",
+            symbol=symbol,
+            order_type=order_type,
+            reason="symbol_price_rules_unavailable",
+            default_sl=atr_stop
+        )
+        return atr_stop
+
+    tight_stop = _build_price_distance_stop(
+        order_type,
+        price,
+        float(atr or 0.0)
+        * DERIV_TIGHT_SL_ATR_MULTIPLIER
+    )
+    min_stop_gap = price_rules["min_stop_gap"]
+    digits = price_rules["digits"]
+
+    if _initial_stop_is_safe(
+        order_type,
+        tight_stop,
+        price,
+        min_stop_gap
+    ):
+        selected_stop = _normalize_price(
+            tight_stop,
+            digits
+        )
+        log_event(
+            "deriv_initial_stop_selected",
+            symbol=symbol,
+            order_type=order_type,
+            reason="tight_half_atr_stop",
+            price=price,
+            atr=atr,
+            sl=selected_stop,
+            min_stop_gap=min_stop_gap
+        )
+        return selected_stop
+
+    pivot_stop = _build_deriv_pivot_side_stop(
+        symbol,
+        order_type,
+        price,
+        min_stop_gap,
+        digits
+    )
+
+    if pivot_stop is not None:
+        log_event(
+            "deriv_initial_stop_selected",
+            symbol=symbol,
+            order_type=order_type,
+            reason="pivot_side_stop",
+            price=price,
+            atr=atr,
+            sl=pivot_stop,
+            attempted_tight_sl=tight_stop,
+            min_stop_gap=min_stop_gap
+        )
+        return pivot_stop
+
+    fallback_stop = _clamp_stop_loss(
+        order_type,
+        atr_stop,
+        price,
+        min_stop_gap,
+        digits
+    )
+    log_event(
+        "deriv_initial_stop_selected",
+        level="warning",
+        symbol=symbol,
+        order_type=order_type,
+        reason="atr_stop_clamped_after_pivot_unavailable",
+        price=price,
+        atr=atr,
+        sl=fallback_stop,
+        attempted_tight_sl=tight_stop,
+        min_stop_gap=min_stop_gap
+    )
+
+    return fallback_stop
+
+
+def _build_atr_initial_stop_loss(
+    order_type,
+    price,
+    atr,
+    settings
+):
+
+    distance = (
+        float(atr or 0.0)
+        * float(
+            settings.get(
+                "sl_atr_multiplier",
+                1.0
+            )
+        )
+    )
+
+    return _build_price_distance_stop(
+        order_type,
+        price,
+        distance
+    )
+
+
+def _build_price_distance_stop(
+    order_type,
+    price,
+    distance
+):
+
+    if order_type == "BUY":
+        return float(price) - float(distance)
+
+    return float(price) + float(distance)
+
+
+def _get_symbol_price_rules(symbol):
+
+    info = mt5.symbol_info(symbol)
+
+    if info is None:
+        log_mt5_error(
+            "symbol_price_rules_unavailable",
+            symbol=symbol
+        )
+        return None
+
+    point = float(
+        getattr(info, "point", 0.0)
+        or 0.0
+    )
+    digits = int(
+        getattr(info, "digits", 5)
+        or 5
+    )
+    stop_level = float(
+        getattr(info, "trade_stops_level", 0.0)
+        or 0.0
+    )
+    min_stop_gap = max(
+        stop_level * point,
+        point * 2 if point > 0 else 0.0
+    )
+
+    return {
+        "point": point,
+        "digits": digits,
+        "min_stop_gap": min_stop_gap
+    }
+
+
+def _build_deriv_pivot_side_stop(
+    symbol,
+    order_type,
+    price,
+    min_stop_gap,
+    digits
+):
+
+    pivots = get_daily_pivots(symbol)
+
+    if pivots is None:
+        return None
+
+    pivot_key = (
+        "S1"
+        if order_type == "BUY"
+        else "R1"
+    )
+    pivot_stop = pivots.get(pivot_key)
+
+    if not _initial_stop_is_safe(
+        order_type,
+        pivot_stop,
+        price,
+        min_stop_gap
+    ):
+        return None
+
+    return _normalize_price(
+        pivot_stop,
+        digits
+    )
+
+
+def _initial_stop_is_safe(
+    order_type,
+    stop_loss,
+    price,
+    min_stop_gap
+):
+
+    if stop_loss is None:
+        return False
+
+    if order_type == "BUY":
+        return float(stop_loss) <= (
+            float(price) - float(min_stop_gap)
+        )
+
+    return float(stop_loss) >= (
+        float(price) + float(min_stop_gap)
+    )
+
+
+def _uses_deriv_tight_initial_stop(symbol):
+
+    symbol_key = _normalized_symbol_key(symbol)
+
+    return symbol_key in (
+        "BOOM1000",
+        "BOOM1000INDEX",
+        "CRASH1000",
+        "CRASH1000INDEX"
+    )
+
+
+def _normalized_symbol_key(symbol):
+
+    return "".join(
+        char
+        for char in str(symbol).upper()
+        if char.isalnum()
+    )
+
+
 # ===================================
 # EXECUTE TRADE
 # ===================================
 
-def execute_trade(
+def _get_effective_trading_settings(overrides=None):
+
+    settings = get_trading_settings()
+
+    if not isinstance(overrides, dict):
+        return settings
+
+    for key, value in overrides.items():
+        if value is not None:
+            settings[key] = value
+
+    return settings
+
+
+def execute_trade_batch(
     symbol,
     order_type,
     lot_size,
     price,
     atr,
+    trade_count=1,
+    settings_overrides=None,
     strategy_names=None,
     strategy_codes=None
 ):
 
-    settings = get_trading_settings()
+    settings = _get_effective_trading_settings(
+        settings_overrides
+    )
+    requested_count = _bounded_trade_count(
+        trade_count
+    )
+    batch_id = _build_trade_batch_id(
+        symbol,
+        order_type,
+        price
+    )
 
     log_event(
-        "execute_trade_requested",
+        "execute_trade_batch_requested",
         symbol=symbol,
         order_type=order_type,
+        requested_trade_count=trade_count,
+        trade_count=requested_count,
         lot_size=lot_size,
         price=price,
         atr=atr,
         profile=settings["id"],
+        settings_overrides=settings_overrides or {},
         strategy_names=strategy_names or [],
-        strategy_codes=strategy_codes or []
+        strategy_codes=strategy_codes or [],
+        batch_id=batch_id
     )
+
+    if requested_count <= 1:
+        ticket = execute_trade(
+            symbol,
+            order_type,
+            lot_size,
+            price,
+            atr,
+            strategy_names=strategy_names,
+            strategy_codes=strategy_codes,
+            settings_overrides=settings_overrides,
+            batch_id=batch_id,
+            batch_index=1,
+            batch_size=1
+        )
+        return (
+            []
+            if ticket is None
+            else [ticket]
+        )
 
     entry_allowed, entry_policy = (
         _trade_entry_is_allowed(
@@ -392,42 +698,225 @@ def execute_trade(
     )
 
     if not entry_allowed:
-
         print(
-            f"{symbol}: Entry skipped "
+            f"{symbol}: Signal batch skipped "
             f"({entry_policy['reason']})"
         )
         log_event(
-            "execute_trade_skipped",
+            "execute_trade_batch_skipped",
             level="warning",
             symbol=symbol,
             profile=settings["id"],
             reason=entry_policy["reason"],
-            entry_policy=entry_policy
+            entry_policy=entry_policy,
+            requested_trade_count=requested_count,
+            batch_id=batch_id
         )
-        return None
+        return []
 
-    log_event(
-        "entry_policy_allowed",
-        symbol=symbol,
-        profile=settings["id"],
-        order_type=order_type,
-        entry_policy=entry_policy
+    symbol_position_count = (
+        _get_symbol_bot_position_count(symbol)
     )
 
-    if order_type == "BUY":
-        sl = price - (
-            atr
-            * settings["sl_atr_multiplier"]
+    if symbol_position_count is None:
+        log_event(
+            "execute_trade_batch_skipped",
+            level="warning",
+            symbol=symbol,
+            profile=settings["id"],
+            reason="positions_unavailable_after_policy",
+            requested_trade_count=requested_count,
+            batch_id=batch_id
         )
+        return []
+
+    max_positions_per_symbol = int(
+        settings.get(
+            "max_positions_per_symbol",
+            requested_count
+        )
+    )
+    remaining_slots = max(
+        max_positions_per_symbol
+        - symbol_position_count,
+        0
+    )
+    orders_to_send = min(
+        requested_count,
+        remaining_slots
+    )
+
+    if orders_to_send <= 0:
+        log_event(
+            "execute_trade_batch_skipped",
+            level="warning",
+            symbol=symbol,
+            profile=settings["id"],
+            reason="max_symbol_positions_reached",
+            symbol_position_count=symbol_position_count,
+            max_positions_per_symbol=max_positions_per_symbol,
+            requested_trade_count=requested_count,
+            batch_id=batch_id
+        )
+        return []
+
+    if orders_to_send < requested_count:
+        log_event(
+            "execute_trade_batch_limited",
+            level="warning",
+            symbol=symbol,
+            profile=settings["id"],
+            requested_trade_count=requested_count,
+            orders_to_send=orders_to_send,
+            symbol_position_count=symbol_position_count,
+            max_positions_per_symbol=max_positions_per_symbol,
+            batch_id=batch_id
+        )
+
+    tickets = []
+
+    for index in range(1, orders_to_send + 1):
+        ticket = execute_trade(
+            symbol,
+            order_type,
+            lot_size,
+            price,
+            atr,
+            strategy_names=strategy_names,
+            strategy_codes=strategy_codes,
+            settings_overrides=settings_overrides,
+            skip_entry_policy=True,
+            batch_id=batch_id,
+            batch_index=index,
+            batch_size=orders_to_send
+        )
+
+        if ticket is not None:
+            tickets.append(ticket)
+        else:
+            log_event(
+                "execute_trade_batch_order_failed",
+                level="warning",
+                symbol=symbol,
+                profile=settings["id"],
+                batch_id=batch_id,
+                batch_index=index,
+                batch_size=orders_to_send
+            )
+
+    log_event(
+        "execute_trade_batch_finished",
+        symbol=symbol,
+        profile=settings["id"],
+        batch_id=batch_id,
+        requested_trade_count=requested_count,
+        attempted_trade_count=orders_to_send,
+        opened_trade_count=len(tickets),
+        tickets=tickets
+    )
+
+    return tickets
+
+
+def execute_trade(
+    symbol,
+    order_type,
+    lot_size,
+    price,
+    atr,
+    strategy_names=None,
+    strategy_codes=None,
+    settings_overrides=None,
+    skip_entry_policy=False,
+    batch_id=None,
+    batch_index=1,
+    batch_size=1
+):
+
+    settings = _get_effective_trading_settings(
+        settings_overrides
+    )
+
+    log_event(
+        "execute_trade_requested",
+        symbol=symbol,
+        order_type=order_type,
+        lot_size=lot_size,
+        price=price,
+        atr=atr,
+        profile=settings["id"],
+        strategy_names=strategy_names or [],
+        strategy_codes=strategy_codes or [],
+        settings_overrides=settings_overrides or {},
+        skip_entry_policy=skip_entry_policy,
+        batch_id=batch_id,
+        batch_index=batch_index,
+        batch_size=batch_size
+    )
+
+    if skip_entry_policy:
+        log_event(
+            "entry_policy_skipped_for_signal_batch",
+            symbol=symbol,
+            profile=settings["id"],
+            order_type=order_type,
+            batch_id=batch_id,
+            batch_index=batch_index,
+            batch_size=batch_size
+        )
+    else:
+        entry_allowed, entry_policy = (
+            _trade_entry_is_allowed(
+                symbol=symbol,
+                order_type=order_type,
+                price=price,
+                atr=atr,
+                settings=settings
+            )
+        )
+
+        if not entry_allowed:
+
+            print(
+                f"{symbol}: Entry skipped "
+                f"({entry_policy['reason']})"
+            )
+            log_event(
+                "execute_trade_skipped",
+                level="warning",
+                symbol=symbol,
+                profile=settings["id"],
+                reason=entry_policy["reason"],
+                entry_policy=entry_policy,
+                batch_id=batch_id,
+                batch_index=batch_index,
+                batch_size=batch_size
+            )
+            return None
+
+        log_event(
+            "entry_policy_allowed",
+            symbol=symbol,
+            profile=settings["id"],
+            order_type=order_type,
+            entry_policy=entry_policy,
+            batch_id=batch_id,
+            batch_index=batch_index,
+            batch_size=batch_size
+        )
+
+    if order_type == "BUY":
         order_type_mt5 = mt5.ORDER_TYPE_BUY
     else:
-        sl = price + (
-            atr
-            * settings["sl_atr_multiplier"]
-        )
         order_type_mt5 = mt5.ORDER_TYPE_SELL
 
+    sl = _build_initial_stop_loss(
+        symbol,
+        order_type,
+        price,
+        atr,
+        settings
+    )
     tp = 0.0
 
     if settings["use_take_profit"]:
@@ -440,7 +929,10 @@ def execute_trade(
                 level="warning",
                 symbol=symbol,
                 profile=settings["id"],
-                reason="pivot_unavailable"
+                reason="pivot_unavailable",
+                batch_id=batch_id,
+                batch_index=batch_index,
+                batch_size=batch_size
             )
             return None
 
@@ -456,7 +948,10 @@ def execute_trade(
                     profile=settings["id"],
                     reason="invalid_buy_tp",
                     tp=tp,
-                    price=price
+                    price=price,
+                    batch_id=batch_id,
+                    batch_index=batch_index,
+                    batch_size=batch_size
                 )
                 return None
         else:
@@ -471,7 +966,10 @@ def execute_trade(
                     profile=settings["id"],
                     reason="invalid_sell_tp",
                     tp=tp,
-                    price=price
+                    price=price,
+                    batch_id=batch_id,
+                    batch_index=batch_index,
+                    batch_size=batch_size
                 )
                 return None
 
@@ -488,7 +986,10 @@ def execute_trade(
         log_event(
             "execute_trade_without_take_profit",
             symbol=symbol,
-            profile=settings["id"]
+            profile=settings["id"],
+            batch_id=batch_id,
+            batch_index=batch_index,
+            batch_size=batch_size
         )
 
     request = {
@@ -523,7 +1024,10 @@ def execute_trade(
             reason="volume_not_affordable",
             requested_lot=lot_size,
             sl=sl,
-            tp=tp
+            tp=tp,
+            batch_id=batch_id,
+            batch_index=batch_index,
+            batch_size=batch_size
         )
         return None
 
@@ -537,7 +1041,10 @@ def execute_trade(
             symbol=symbol,
             profile=settings["id"],
             requested_lot=lot_size,
-            adjusted_lot=adjusted_lot
+            adjusted_lot=adjusted_lot,
+            batch_id=batch_id,
+            batch_index=batch_index,
+            batch_size=batch_size
         )
 
     request["volume"] = adjusted_lot
@@ -554,7 +1061,10 @@ def execute_trade(
         log_mt5_error(
             "order_send_failed",
             symbol=symbol,
-            request=final_request
+            request=final_request,
+            batch_id=batch_id,
+            batch_index=batch_index,
+            batch_size=batch_size
         )
         log_trade(
             symbol,
@@ -581,7 +1091,10 @@ def execute_trade(
             symbol=symbol,
             profile=settings["id"],
             request=final_request,
-            result=result
+            result=result,
+            batch_id=batch_id,
+            batch_index=batch_index,
+            batch_size=batch_size
         )
         log_mt5_error(
             "order_send_last_error",
@@ -610,7 +1123,10 @@ def execute_trade(
         symbol=symbol,
         profile=settings["id"],
         request=final_request,
-        result=result
+        result=result,
+        batch_id=batch_id,
+        batch_index=batch_index,
+        batch_size=batch_size
     )
 
     log_trade(
@@ -625,6 +1141,54 @@ def execute_trade(
     )
 
     return result.order
+
+
+def _bounded_trade_count(value):
+
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        normalized = 1
+
+    return max(
+        1,
+        min(
+            normalized,
+            5
+        )
+    )
+
+
+def _build_trade_batch_id(
+    symbol,
+    order_type,
+    price
+):
+
+    return (
+        f"{symbol}:{order_type}:"
+        f"{round(float(price or 0.0), 5)}"
+    )
+
+
+def _get_symbol_bot_position_count(symbol):
+
+    positions = mt5.positions_get(
+        symbol=symbol
+    )
+
+    if positions is None:
+        log_mt5_error(
+            "batch_positions_get_failed",
+            symbol=symbol
+        )
+        return None
+
+    return len([
+        position
+        for position in positions
+        if _is_bot_position(position)
+    ])
 
 
 # ===================================
@@ -726,6 +1290,9 @@ def trail_positions(
     df = pd.DataFrame(rates)
     df = calculate_atr(df)
     atr = df["atr"].iloc[-1]
+    previous_candle_half = _get_previous_closed_candle_half(
+        df
+    )
 
     if pd.isna(atr):
         log_event(
@@ -777,11 +1344,8 @@ def trail_positions(
             or 0
         ) * point
     )
-    pivots = (
-        get_daily_pivots(symbol)
-        if use_take_profit
-        else None
-    )
+    pivots = None
+    pivots_loaded = False
 
     for pos in positions:
 
@@ -819,16 +1383,64 @@ def trail_positions(
         reasons = []
         tp1 = None
         tp2 = None
+        previous_candle_half_sl = None
+        uses_previous_candle_half_trailing = (
+            use_trailing_stop
+            and _uses_deriv_previous_candle_half_trailing(
+                symbol,
+                position_type
+            )
+        )
+        position_use_take_profit = (
+            use_take_profit
+            and not uses_previous_candle_half_trailing
+        )
+        position_extend_take_profit = (
+            extend_take_profit
+            and position_use_take_profit
+        )
+
+        if uses_previous_candle_half_trailing:
+            previous_candle_half_sl = (
+                _build_deriv_previous_candle_half_stop(
+                    symbol,
+                    position_type,
+                    previous_candle_half,
+                    price,
+                    min_stop_gap,
+                    digits
+                )
+            )
+
+            if (
+                previous_candle_half_sl is not None
+                and _price_has_changed(
+                    desired_sl,
+                    previous_candle_half_sl,
+                    point
+                )
+            ):
+                desired_sl = previous_candle_half_sl
+                reasons.append(
+                    "previous_candle_half_trailing"
+                )
 
         if (
-            not use_take_profit
+            not position_use_take_profit
             and desired_tp > 0
         ):
             desired_tp = 0.0
             reasons.append("tp_removed")
 
         if (
-            use_take_profit
+            position_use_take_profit
+            and not pivots_loaded
+        ):
+            pivots = get_daily_pivots(symbol)
+            pivots_loaded = True
+
+        if (
+            position_use_take_profit
             and pivots is not None
         ):
             tp1, tp2 = _get_pivot_targets(
@@ -907,7 +1519,7 @@ def trail_positions(
                     reasons.append("break_even")
 
             if (
-                extend_take_profit
+                position_extend_take_profit
                 and tp2 is not None
                 and progress_to_tp1
                 >= settings[
@@ -925,7 +1537,7 @@ def trail_positions(
                 )
 
             tp2_active = (
-                extend_take_profit
+                position_extend_take_profit
                 and tp2 is not None
                 and _prices_match(
                     desired_tp,
@@ -936,6 +1548,7 @@ def trail_positions(
 
             if (
                 use_trailing_stop
+                and not uses_previous_candle_half_trailing
                 and tp2_active
                 and _has_cleared_level(
                     position_type,
@@ -1011,7 +1624,10 @@ def trail_positions(
                     digits=digits,
                     point=point,
                     use_break_even=use_break_even,
-                    use_trailing_stop=use_trailing_stop,
+                    use_trailing_stop=(
+                        use_trailing_stop
+                        and not uses_previous_candle_half_trailing
+                    ),
                     break_even_trigger_ratio=(
                         settings[
                             "break_even_trigger_ratio"
@@ -1030,6 +1646,32 @@ def trail_positions(
             reasons.extend(fallback_reasons)
 
         if not reasons:
+            if uses_previous_candle_half_trailing:
+                skip_reason = (
+                    "previous_candle_half_unchanged"
+                    if previous_candle_half_sl is not None
+                    else "previous_candle_half_unavailable"
+                )
+            else:
+                skip_reason = "no_position_update_needed"
+
+            log_event(
+                "trail_positions_skipped",
+                symbol=symbol,
+                timeframe=timeframe_label,
+                ticket=pos.ticket,
+                position_type=position_type,
+                current_price=price,
+                current_sl=pos.sl,
+                current_tp=pos.tp,
+                previous_candle_half=previous_candle_half,
+                previous_candle_half_sl=previous_candle_half_sl,
+                uses_previous_candle_half_trailing=(
+                    uses_previous_candle_half_trailing
+                ),
+                profile=settings["id"],
+                reason=skip_reason
+            )
             continue
 
         desired_sl = _normalize_price(
@@ -1053,6 +1695,11 @@ def trail_positions(
             current_tp=pos.tp,
             new_sl=desired_sl,
             new_tp=desired_tp,
+            previous_candle_half=previous_candle_half,
+            previous_candle_half_sl=previous_candle_half_sl,
+            uses_previous_candle_half_trailing=(
+                uses_previous_candle_half_trailing
+            ),
             atr=atr,
             profile=settings["id"],
             reasons=reasons,
@@ -1066,6 +1713,114 @@ def trail_positions(
             new_tp=desired_tp,
             reason=",".join(reasons)
         )
+
+
+def _get_previous_closed_candle_half(df):
+
+    if (
+        df is None
+        or len(df) < 2
+        or "high" not in df
+        or "low" not in df
+    ):
+        return None
+
+    ordered_df = df
+
+    if "time" in df:
+        ordered_df = df.sort_values(
+            "time"
+        ).reset_index(drop=True)
+
+    previous_high = ordered_df.iloc[-2]["high"]
+    previous_low = ordered_df.iloc[-2]["low"]
+
+    if (
+        pd.isna(previous_high)
+        or pd.isna(previous_low)
+    ):
+        return None
+
+    return (
+        float(previous_high)
+        + float(previous_low)
+    ) / 2
+
+
+def _build_deriv_previous_candle_half_stop(
+    symbol,
+    position_type,
+    previous_candle_half,
+    current_price,
+    min_stop_gap,
+    digits
+):
+
+    if not _uses_deriv_previous_candle_half_trailing(
+        symbol,
+        position_type
+    ):
+        return None
+
+    if previous_candle_half is None:
+        return None
+
+    return _clamp_stop_loss(
+        position_type,
+        previous_candle_half,
+        current_price,
+        min_stop_gap,
+        digits
+    )
+
+
+def _uses_deriv_previous_candle_half_trailing(
+    symbol,
+    position_type
+):
+
+    symbol_key = "".join(
+        char
+        for char in str(symbol).upper()
+        if char.isalnum()
+    )
+
+    if (
+        symbol_key in (
+            "CRASH1000",
+            "CRASH1000INDEX"
+        )
+        and position_type == "BUY"
+    ):
+        return True
+
+    if (
+        symbol_key in (
+            "BOOM1000",
+            "BOOM1000INDEX"
+        )
+        and position_type == "SELL"
+    ):
+        return True
+
+    return False
+
+
+def _previous_candle_half_can_be_stop(
+    position_type,
+    previous_candle_half,
+    current_price,
+    min_stop_gap
+):
+
+    if position_type == "BUY":
+        return previous_candle_half <= (
+            current_price - min_stop_gap
+        )
+
+    return previous_candle_half >= (
+        current_price + min_stop_gap
+    )
 
 
 # ===================================
@@ -1575,11 +2330,7 @@ def _fit_order_volume(
         )
         attempts += 1
 
-        if (
-            check_result is not None
-            and check_result.retcode
-            == mt5.TRADE_RETCODE_DONE
-        ):
+        if _order_check_succeeded(check_result):
             return candidate_volume
 
         if check_result is None:
@@ -1632,6 +2383,32 @@ def _fit_order_volume(
     )
 
     return None
+
+
+def _order_check_succeeded(check_result):
+
+    if check_result is None:
+        return False
+
+    retcode = getattr(
+        check_result,
+        "retcode",
+        None
+    )
+
+    success_retcodes = {0}
+    trade_done_retcode = getattr(
+        mt5,
+        "TRADE_RETCODE_DONE",
+        None
+    )
+
+    if trade_done_retcode is not None:
+        success_retcodes.add(
+            trade_done_retcode
+        )
+
+    return retcode in success_retcodes
 
 
 def _send_order_with_volume_fallback(

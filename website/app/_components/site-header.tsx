@@ -13,6 +13,7 @@ const navItems = [
   { href: "#strategy", label: "Strategy" },
   { href: "#risk", label: "Risk" },
   { href: "#deploy", label: "Deploy" },
+  { href: "#affiliates", label: "Affiliates" },
 ];
 
 async function readHeaderSession() {

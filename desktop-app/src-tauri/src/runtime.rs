@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -17,15 +17,58 @@ pub struct BridgeValidation {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct StrategyOption {
+    pub id: String,
+    pub label: String,
+    pub enabled: bool,
+    pub default_enabled: bool,
+    pub timeframe: String,
+    pub recommended_timeframes: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BrokerDailyLimits {
+    pub enabled: bool,
+    pub target: f64,
+    pub max_loss: f64,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BrokerSymbol {
+    pub canonical: String,
+    pub mt5: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct BrokerSummary {
     pub id: String,
     pub label: String,
     pub enabled: bool,
     pub terminal_path: String,
+    pub expected_login: Option<u64>,
+    pub expected_server: String,
     pub trading_profile: String,
+    pub symbols: Vec<BrokerSymbol>,
     pub enabled_symbols: Vec<String>,
+    pub daily_limits: BrokerDailyLimits,
     pub validation: BridgeValidation,
     pub requires_strategy_pause: bool,
+    pub allowed_strategies: Vec<StrategyOption>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BridgeStatus {
+    pub server: BridgeServer,
+    pub enabled_broker_count: usize,
+    pub brokers: Vec<BrokerSummary>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BotTradingSettings {
+    pub active_profile: String,
+    pub default_profile: String,
+    pub profiles: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -36,10 +79,41 @@ pub struct BridgeServer {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct BridgeStatus {
-    pub server: BridgeServer,
-    pub enabled_broker_count: usize,
+pub struct BotSettings {
+    pub status: BridgeStatus,
+    pub trading: BotTradingSettings,
+    pub strategies: Vec<StrategyOption>,
+    pub strategy_catalog: Vec<StrategyOption>,
     pub brokers: Vec<BrokerSummary>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DesktopLogFile {
+    pub file: String,
+    pub name: String,
+    pub category: String,
+    pub size: u64,
+    pub modified_at: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DesktopLogEntry {
+    pub at: String,
+    pub level: String,
+    pub category: String,
+    pub source: String,
+    pub file: String,
+    pub line_number: u64,
+    pub line: String,
+    pub raw: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DesktopLogsResponse {
+    pub generated_at: String,
+    pub logs_root: String,
+    pub files: Vec<DesktopLogFile>,
+    pub entries: Vec<DesktopLogEntry>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -77,6 +151,19 @@ pub struct DesktopStatus {
 pub struct ActionResponse {
     pub message: String,
     pub status: DesktopStatus,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct BotSettingsSaveResponse {
+    pub message: String,
+    pub settings: BotSettings,
+    pub status: DesktopStatus,
+}
+
+#[derive(Debug, Deserialize)]
+struct BridgeSettingsSaveResponse {
+    message: String,
+    settings: BotSettings,
 }
 
 struct ManagedChild {
@@ -282,6 +369,47 @@ impl RuntimeSupervisor {
         self.build_status(None)
     }
 
+    pub fn bot_settings(&self) -> Result<BotSettings, String> {
+        self.load_bot_settings()
+    }
+
+    pub fn app_logs(&self) -> Result<DesktopLogsResponse, String> {
+        self.load_app_logs()
+    }
+
+    pub fn trade_journal(&self) -> Result<serde_json::Value, String> {
+        self.run_bridge_json_command("journal", None, "desktop journal")
+    }
+
+    pub fn run_backtest(
+        &mut self,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        if self.trading.is_running() {
+            return Err("Stop local trading before running a backtest.".to_string());
+        }
+
+        self.run_bridge_json_command("backtest", Some(payload), "desktop backtest")
+    }
+
+    pub fn save_bot_settings(
+        &mut self,
+        payload: serde_json::Value,
+    ) -> Result<BotSettingsSaveResponse, String> {
+        if self.trading.is_running() {
+            return Err("Stop local trading before saving bot settings.".to_string());
+        }
+
+        let response = self.save_bridge_settings(payload)?;
+        let status = self.build_status(Some(response.settings.status.clone()));
+
+        Ok(BotSettingsSaveResponse {
+            message: response.message,
+            settings: response.settings,
+            status,
+        })
+    }
+
     pub fn start_server(&mut self) -> Result<ActionResponse, String> {
         if self.server.is_running() {
             return Ok(ActionResponse {
@@ -430,6 +558,141 @@ impl RuntimeSupervisor {
 
         serde_json::from_slice(&output.stdout)
             .map_err(|error| format!("Failed to parse desktop bridge output: {error}"))
+    }
+
+    fn load_bot_settings(&self) -> Result<BotSettings, String> {
+        let output = self
+            .python_command()
+            .args(["-m", "trading.desktop_bridge", "settings"])
+            .current_dir(&self.project_root)
+            .output()
+            .map_err(|error| format!("Failed to run desktop bridge: {error}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!(
+                "Desktop bridge exited with {}: {}",
+                output.status,
+                stderr.trim()
+            ));
+        }
+
+        serde_json::from_slice(&output.stdout)
+            .map_err(|error| format!("Failed to parse desktop settings output: {error}"))
+    }
+
+    fn load_app_logs(&self) -> Result<DesktopLogsResponse, String> {
+        let output = self
+            .python_command()
+            .args(["-m", "trading.desktop_bridge", "logs"])
+            .current_dir(&self.project_root)
+            .output()
+            .map_err(|error| format!("Failed to run desktop bridge: {error}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!(
+                "Desktop bridge exited with {}: {}",
+                output.status,
+                stderr.trim()
+            ));
+        }
+
+        serde_json::from_slice(&output.stdout)
+            .map_err(|error| format!("Failed to parse desktop log output: {error}"))
+    }
+
+    fn run_bridge_json_command(
+        &self,
+        command_name: &str,
+        payload: Option<serde_json::Value>,
+        context: &str,
+    ) -> Result<serde_json::Value, String> {
+        let mut command = self.python_command();
+        command
+            .args(["-m", "trading.desktop_bridge", command_name])
+            .current_dir(&self.project_root)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        if payload.is_some() {
+            command.stdin(Stdio::piped());
+        }
+
+        let mut child = command
+            .spawn()
+            .map_err(|error| format!("Failed to run {context}: {error}"))?;
+
+        if let Some(payload) = payload {
+            let mut stdin = child
+                .stdin
+                .take()
+                .ok_or_else(|| format!("Failed to open {context} stdin."))?;
+
+            stdin
+                .write_all(payload.to_string().as_bytes())
+                .map_err(|error| format!("Failed to write {context} payload: {error}"))?;
+            drop(stdin);
+        }
+
+        let output = child
+            .wait_with_output()
+            .map_err(|error| format!("Failed to read {context} output: {error}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!(
+                "Desktop bridge exited with {}: {}",
+                output.status,
+                stderr.trim()
+            ));
+        }
+
+        serde_json::from_slice(&output.stdout)
+            .map_err(|error| format!("Failed to parse {context} output: {error}"))
+    }
+
+    fn save_bridge_settings(
+        &self,
+        payload: serde_json::Value,
+    ) -> Result<BridgeSettingsSaveResponse, String> {
+        let mut command = self.python_command();
+        command
+            .args(["-m", "trading.desktop_bridge", "save-settings"])
+            .current_dir(&self.project_root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut child = command
+            .spawn()
+            .map_err(|error| format!("Failed to run desktop bridge: {error}"))?;
+
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "Failed to open desktop bridge stdin.".to_string())?;
+
+        stdin
+            .write_all(payload.to_string().as_bytes())
+            .map_err(|error| format!("Failed to write desktop settings payload: {error}"))?;
+        drop(stdin);
+
+        let output = child
+            .wait_with_output()
+            .map_err(|error| format!("Failed to read desktop bridge output: {error}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!(
+                "Desktop bridge exited with {}: {}",
+                output.status,
+                stderr.trim()
+            ));
+        }
+
+        serde_json::from_slice(&output.stdout)
+            .map_err(|error| format!("Failed to parse desktop settings output: {error}"))
     }
 
     fn python_command(&self) -> Command {

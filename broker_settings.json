@@ -1,12 +1,17 @@
 {
   "brokers": {
     "exness": {
-      "enabled": true,
+      "enabled": false,
       "label": "Exness",
       "terminal_path": "C:\\Program Files\\MetaTrader 5 EXNESS\\terminal64.exe",
       "expected_login": 435325248,
       "expected_server": "Exness-MT5Trial9",
       "trading_profile": "regular_risk",
+      "daily_limits": {
+        "enabled": true,
+        "target": 150.0,
+        "max_loss": -100.0
+      },
       "symbols": [
         {
           "canonical": "EURUSD",
@@ -43,16 +48,89 @@
           "mt5": "XAUUSDm",
           "enabled": true
         }
-      ]
+      ],
+      "strategy_settings": {
+        "ma_crossover": {
+          "enabled": true,
+          "timeframe": "M15",
+          "recommended_timeframes": [
+            "M15",
+            "M30",
+            "H1"
+          ]
+        },
+        "trendline_price_action": {
+          "enabled": true,
+          "timeframe": "H1",
+          "recommended_timeframes": [
+            "H1",
+            "H4",
+            "D1"
+          ]
+        },
+        "smc_liquidity_sweep": {
+          "enabled": true,
+          "timeframe": "M15",
+          "recommended_timeframes": [
+            "M15",
+            "M30",
+            "H1"
+          ]
+        },
+        "high_impact_news": {
+          "enabled": true,
+          "timeframe": "M1",
+          "recommended_timeframes": [
+            "M1",
+            "M5"
+          ]
+        }
+      }
     },
     "deriv": {
-      "enabled": false,
+      "enabled": true,
       "label": "Deriv",
-      "terminal_path": "",
-      "expected_login": null,
-      "expected_server": "",
+      "terminal_path": "C:\\Program Files\\MetaTrader 5 Terminal\\terminal64.exe",
+      "expected_login": 41052686,
+      "expected_server": "Deriv-Demo",
       "trading_profile": "regular_risk",
-      "symbols": []
+      "max_spread_points": 25000,
+      "daily_limits": {
+        "enabled": false,
+        "target": 150.0,
+        "max_loss": -100.0
+      },
+      "symbols": [
+        {
+          "canonical": "BOOM1000",
+          "mt5": "Boom 1000 Index",
+          "enabled": true
+        },
+        {
+          "canonical": "CRASH1000",
+          "mt5": "Crash 1000 Index",
+          "enabled": true
+        }
+      ],
+      "strategy_settings": {
+        "stochastic_oscillator": {
+          "enabled": true,
+          "timeframe": "M5",
+          "recommended_timeframes": [
+            "M5"
+          ],
+          "k_period": 5,
+          "d_period": 3,
+          "slowing": 3,
+          "upper_level": 75,
+          "lower_level": 25,
+          "price_field": "low_high",
+          "method": "simple",
+          "trades_per_signal": 5,
+          "max_positions_per_symbol": 25,
+          "use_take_profit": false
+        }
+      }
     }
   }
 }

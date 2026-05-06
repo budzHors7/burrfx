@@ -23,6 +23,8 @@ def health_check() -> dict[str, object]:
             "GET /api/v1/bot/status",
             "POST /api/v1/bot/start",
             "POST /api/v1/bot/stop",
+            "GET /api/v1/settings/brokers",
+            "PATCH /api/v1/settings/brokers/{broker_id}/daily-limits",
         ],
         "runtime_guards": [
             "Terminal menu flow preserved",

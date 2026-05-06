@@ -2,19 +2,26 @@ from datetime import datetime
 import time
 import MetaTrader5 as mt5
 import pandas as pd
-import keyboard
 import os
+
+try:
+    import keyboard
+except ModuleNotFoundError:
+    keyboard = None
+
 from .risk_manager import calculate_lot_size
 from utils import clear_screen, pause
 from logo import show_logo
 from .account import get_account_info
 from config import (
+    ENABLE_DAILY_LOCK,
     INITIAL_BALANCE,
     SYMBOLS
 )
 from .account_stats import get_stats
 from .trade_manager import (
-    execute_trade
+    execute_trade,
+    execute_trade_batch
 )
 from .candle_sync import wait_for_new_candle
 from .trade_manager import trail_positions
@@ -23,7 +30,8 @@ from .daily_risk_manager import (
     update_daily_profit,
     check_daily_limits,
     is_trading_locked,
-    get_daily_profit
+    get_daily_profit,
+    get_daily_limits
 )
 from .market_filters import (
     market_is_safe,
@@ -91,6 +99,22 @@ def _sleep_with_stop(
         return False
 
     return stop_event.wait(timeout=seconds)
+
+
+def _keyboard_quit_requested():
+
+    if keyboard is None:
+        return False
+
+    try:
+        return keyboard.is_pressed("q")
+    except Exception as exc:
+        log_event(
+            "keyboard_input_unavailable",
+            level="warning",
+            error=str(exc)
+        )
+        return False
 
 
 def _build_runtime_result(
@@ -289,6 +313,22 @@ def process_symbol(
         for item in aligned_signals
         if item["reason"]
     ]
+    try:
+        trades_per_signal = max(
+            int(
+                lead_signal.get(
+                    "trades_per_signal",
+                    1
+                )
+            ),
+            1
+        )
+    except (TypeError, ValueError):
+        trades_per_signal = 1
+    execution_overrides = lead_signal.get(
+        "execution_overrides",
+        {}
+    )
 
     account = mt5.account_info()
 
@@ -337,6 +377,9 @@ def process_symbol(
         lot_size=lot_size,
         strategies=strategy_names,
         strategy_codes=strategy_codes,
+        trades_per_signal=trades_per_signal,
+        execution_overrides=execution_overrides,
+        signal_context=lead_signal.get("context", {}),
         recommended_timeframes=[
             signal_item["recommended_timeframes"]
             for signal_item in aligned_signals
@@ -344,15 +387,39 @@ def process_symbol(
         reasons=strategy_reasons
     )
 
-    execute_trade(
-        symbol,
-        signal,
-        lot_size,
-        price,
-        atr,
-        strategy_names=strategy_names,
-        strategy_codes=strategy_codes
-    )
+    if trades_per_signal > 1:
+        tickets = execute_trade_batch(
+            symbol,
+            signal,
+            lot_size,
+            price,
+            atr,
+            trade_count=trades_per_signal,
+            settings_overrides=execution_overrides,
+            strategy_names=strategy_names,
+            strategy_codes=strategy_codes
+        )
+        log_event(
+            "signal_trade_batch_result",
+            symbol=symbol,
+            canonical_symbol=symbol_meta["canonical"],
+            mt5_symbol=symbol_meta["mt5"],
+            requested_trade_count=trades_per_signal,
+            opened_trade_count=len(tickets),
+            tickets=tickets,
+            execution_overrides=execution_overrides
+        )
+    else:
+        execute_trade(
+            symbol,
+            signal,
+            lot_size,
+            price,
+            atr,
+            strategy_names=strategy_names,
+            strategy_codes=strategy_codes,
+            settings_overrides=execution_overrides
+        )
 
 
 def start_live_trading(
@@ -398,7 +465,7 @@ def start_live_trading(
                 "broker_strategy_paused",
                 (
                     f"{broker_context['label']} paused: "
-                    "no synthetic strategy config enabled."
+                    "no enabled broker strategy configured."
                 )
             )
 
@@ -811,7 +878,7 @@ def start_live_trading(
 
             if (
                 interactive
-                and keyboard.is_pressed("q")
+                and _keyboard_quit_requested()
             ):
 
                 print("Returning to menu...")
@@ -1165,8 +1232,6 @@ def display_dashboard(
     if acc is None:
         return
 
-    from config import DAILY_TARGET, MAX_DAILY_LOSS
-
     balance = acc.get("balance", 0)
     equity = acc.get("equity", 0)
     profit = acc.get("profit", 0)
@@ -1175,8 +1240,17 @@ def display_dashboard(
     login = acc.get("login", "N/A")
     server = acc.get("server", "N/A")
     daily = get_daily_profit()
-    remaining = DAILY_TARGET - daily
-    loss_buffer = MAX_DAILY_LOSS - daily
+    daily_limits = get_daily_limits()
+    daily_limits_enabled = (
+        ENABLE_DAILY_LOCK
+        and bool(daily_limits.get("enabled"))
+    )
+    remaining = None
+    loss_buffer = None
+
+    if daily_limits_enabled:
+        remaining = daily_limits["target"] - daily
+        loss_buffer = daily - daily_limits["max_loss"]
     stats = stats or get_stats()
     realized_profit = stats.get("profit", 0)
     realized_loss = stats.get("loss", 0)
@@ -1216,8 +1290,11 @@ def display_dashboard(
     print(f"Realized Loss: {realized_loss:.2f}")
     print(f"Realized Net: {realized_net:.2f}")
     print(f"\nDaily PnL: {daily:.2f}")
-    print(f"Target Remaining: {remaining:.2f}")
-    print(f"Loss Buffer: {loss_buffer:.2f}")
+
+    if daily_limits_enabled:
+        print(f"Target Remaining: {remaining:.2f}")
+        print(f"Loss Buffer: {loss_buffer:.2f}")
+
     print(f"\nSTATUS: {trade_status}")
     if broker_label:
         print(f"Broker: {broker_label}")

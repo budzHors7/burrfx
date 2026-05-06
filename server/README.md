@@ -14,6 +14,8 @@ The server opens and manages one MT5 session for the current process, then expos
 
 The selected trading profile is shared with the original terminal app through `trading_settings.json`, so the API and CLI use the same trading behavior.
 
+Broker daily target/loss limits are shared through `broker_settings.json`. The server exposes those broker settings so the mobile app can adjust daily limits without editing files manually.
+
 Implemented routes:
 
 - `GET /`
@@ -28,6 +30,8 @@ Implemented routes:
 - `GET /api/v1/bot/status`
 - `POST /api/v1/bot/start`
 - `POST /api/v1/bot/stop`
+- `GET /api/v1/settings/brokers`
+- `PATCH /api/v1/settings/brokers/{broker_id}/daily-limits`
 
 Current runtime guardrails:
 
@@ -35,6 +39,7 @@ Current runtime guardrails:
 - bot control uses a stop event instead of keyboard polling
 - the current process serves one active MT5 account session at a time
 - account logs require an authenticated MT5 session
+- broker daily limit changes are blocked while the bot runtime is active
 
 ## Prerequisites
 
@@ -132,6 +137,7 @@ Invoke-RestMethod -Uri "http://localhost:8000/api/v1/account/overview"
 Invoke-RestMethod -Uri "http://localhost:8000/api/v1/account/logs"
 Invoke-RestMethod -Uri "http://localhost:8000/api/v1/trades/open"
 Invoke-RestMethod -Uri "http://localhost:8000/api/v1/bot/status"
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/settings/brokers"
 ```
 
 Start and stop the bot:
@@ -139,6 +145,10 @@ Start and stop the bot:
 ```powershell
 Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/v1/bot/start"
 Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/v1/bot/stop"
+Invoke-RestMethod -Method Patch `
+  -Uri "http://localhost:8000/api/v1/settings/brokers/deriv/daily-limits" `
+  -ContentType "application/json" `
+  -Body '{"enabled":true,"target":150,"max_loss":-100}'
 ```
 
 ## Local Testing Notes
@@ -147,7 +157,9 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/v1/bot/stop"
 - `auth/login`, `account/overview`, `account/logs`, `trades/open`, and bot control require MT5 on the same machine
 - the active trading profile is returned in the session snapshot and is persisted into the same shared trading settings used by the terminal app
 - the mobile app's Logs tab reads `/api/v1/account/logs`
+- the mobile app's dashboard broker settings read `/api/v1/settings/brokers` and save daily target/loss values through `/api/v1/settings/brokers/{broker_id}/daily-limits`
 - the mobile app's Journal tab is local SQLite storage on the device, not a server endpoint
+- the desktop app's file logs viewer reads local `logs/` files through `python -m trading.desktop_bridge logs`, not through a public HTTP route
 - for mobile testing from an emulator or phone, use a reachable IP instead of `localhost`
 
 Recommended local values:

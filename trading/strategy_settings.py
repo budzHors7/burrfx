@@ -16,6 +16,37 @@ SETTINGS_FILE = os.path.join(
     PROJECT_ROOT,
     "strategy_settings.json"
 )
+DEFAULT_BROKER_STRATEGY_SETTINGS = {
+    "deriv": {
+        "stochastic_oscillator": {
+            "enabled": True,
+            "timeframe": "M5",
+            "recommended_timeframes": [
+                "M5"
+            ],
+            "k_period": 5,
+            "d_period": 3,
+            "slowing": 3,
+            "upper_level": 75,
+            "lower_level": 25,
+            "price_field": "low_high",
+            "method": "simple",
+            "trades_per_signal": 5,
+            "max_positions_per_symbol": 25,
+            "use_take_profit": False
+        }
+    }
+}
+BROKER_ALLOWED_STRATEGIES = {
+    "deriv": {
+        "stochastic_oscillator"
+    }
+}
+BROKER_SCOPED_STRATEGIES = {
+    "stochastic_oscillator": {
+        "deriv"
+    }
+}
 DISPLAY_NAMES = {
     "ma_crossover": "MA Crossover",
     "trendline_price_action": (
@@ -26,6 +57,9 @@ DISPLAY_NAMES = {
     ),
     "high_impact_news": (
         "High Impact News"
+    ),
+    "stochastic_oscillator": (
+        "Stochastic Oscillator"
     )
 }
 
@@ -48,6 +82,82 @@ def get_strategy_settings():
         settings[strategy_id].update(override)
 
     return settings
+
+
+def get_default_broker_strategy_settings(broker_id):
+
+    return _clone_settings(
+        DEFAULT_BROKER_STRATEGY_SETTINGS.get(
+            broker_id,
+            {}
+        )
+    )
+
+
+def get_broker_strategy_settings(broker):
+
+    if not isinstance(broker, dict):
+        return {}
+
+    broker_id = broker.get("id")
+    raw_settings = broker.get(
+        "strategy_settings",
+        {}
+    )
+
+    if not isinstance(raw_settings, dict):
+        return {}
+
+    allowed_strategies = BROKER_ALLOWED_STRATEGIES.get(
+        broker_id
+    )
+    settings = {}
+
+    for strategy_id, strategy in raw_settings.items():
+
+        if not isinstance(strategy, dict):
+            continue
+
+        if (
+            allowed_strategies is not None
+            and strategy_id not in allowed_strategies
+        ):
+            continue
+
+        scoped_brokers = BROKER_SCOPED_STRATEGIES.get(
+            strategy_id
+        )
+
+        if (
+            scoped_brokers is not None
+            and broker_id not in scoped_brokers
+        ):
+            continue
+
+        settings[strategy_id] = strategy.copy()
+
+    return settings
+
+
+def broker_strategy_config_has_enabled_strategy(broker):
+
+    return any(
+        strategy.get("enabled", False)
+        for strategy in (
+            get_broker_strategy_settings(broker).values()
+        )
+    )
+
+
+def get_enabled_broker_strategy_names(broker):
+
+    return [
+        _format_strategy_name(strategy_id)
+        for strategy_id, strategy in (
+            get_broker_strategy_settings(broker).items()
+        )
+        if strategy.get("enabled", False)
+    ]
 
 
 def strategy_settings_menu():

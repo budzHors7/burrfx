@@ -11,8 +11,10 @@ const footerGroups = [
     links: [
       ["Overview", "/#product"],
       ["Strategy", "/#strategy"],
+      ["Latest", "/#latest"],
       ["Risk", "/#risk"],
       ["Deploy", "/#deploy"],
+      ["Affiliates", "/#affiliates"],
     ],
   },
   {

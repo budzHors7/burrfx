@@ -2,3 +2,4 @@ MetaTrader5
 pandas
 numpy
 matplotlib
+keyboard>=0.13,<1.0

@@ -130,7 +130,7 @@ def _run_paused_deriv_worker(broker):
         log_event(
             "deriv_worker_paused",
             broker=broker["id"],
-            reason="no_synthetic_strategy_config"
+            reason="no_enabled_broker_strategy"
         )
 
         while True:
@@ -205,7 +205,7 @@ def _render_deriv_paused_dashboard(broker):
 
     print("\nSTATUS: PAUSED")
     print(
-        "Deriv paused: no synthetic strategy config enabled."
+        "Deriv paused: no enabled broker strategy configured."
     )
     print(
         "Configured symbols: "

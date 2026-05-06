@@ -5,6 +5,7 @@ from server.app.api.routes.account import router as account_router
 from server.app.api.routes.auth import router as auth_router
 from server.app.api.routes.bot import router as bot_router
 from server.app.api.routes.health import router as health_router
+from server.app.api.routes.settings import router as settings_router
 from server.app.api.routes.trades import router as trades_router
 from server.app.core.settings import settings
 
@@ -29,6 +30,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(account_router, prefix=settings.api_prefix)
 app.include_router(bot_router, prefix=settings.api_prefix)
+app.include_router(settings_router, prefix=settings.api_prefix)
 app.include_router(trades_router, prefix=settings.api_prefix)
 app.include_router(health_router, prefix=settings.api_prefix)
 

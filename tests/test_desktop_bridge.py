@@ -1,11 +1,12 @@
 import io
 import json
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from trading import desktop_bridge
 
@@ -55,6 +56,9 @@ def _broker(
 
 
 class DesktopBridgeTests(unittest.TestCase):
+    def test_backtester_import_is_lazy_for_lightweight_bridge_commands(self):
+        self.assertNotIn("backtesting.backtester", sys.modules)
+
     def test_build_status_summarizes_brokers_and_server_url(self):
         brokers = [
             _broker("exness"),
@@ -211,11 +215,20 @@ class DesktopBridgeTests(unittest.TestCase):
         )
 
     def test_run_backtest_passes_payload_to_broker_backtester(self):
-        with patch.object(
-            desktop_bridge.backtester,
-            "run_broker_backtest",
+        backtester = SimpleNamespace(
+            DEFAULT_BACKTEST_BARS=500,
+            MIN_BACKTEST_BARS=50,
+            MAX_BACKTEST_BARS=10000,
+        )
+        backtester.run_broker_backtest = Mock(
             return_value={"summary": {"trade_count": 0}},
-        ) as run_broker_backtest:
+        )
+
+        with patch.object(
+            desktop_bridge,
+            "_load_backtester",
+            return_value=backtester,
+        ):
             result = desktop_bridge.run_backtest(
                 {
                     "broker_ids": ["exness", "deriv"],
@@ -225,7 +238,7 @@ class DesktopBridgeTests(unittest.TestCase):
             )
 
         self.assertEqual(result, {"summary": {"trade_count": 0}})
-        run_broker_backtest.assert_called_once_with(
+        backtester.run_broker_backtest.assert_called_once_with(
             {
                 "broker_ids": ["exness", "deriv"],
                 "bars": 250,

@@ -319,6 +319,26 @@ h3 {
   width: min(1180px, 100%);
 }
 
+.tool-modal {
+  max-width: 1080px;
+  width: min(1080px, 100%);
+}
+
+.modal-panel-content {
+  overflow: auto;
+  padding: 18px;
+}
+
+.modal-panel-content .panel {
+  box-shadow: none;
+}
+
+.modal-heading-actions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
 .modal-log-content {
   overflow: hidden;
   padding: 18px;
@@ -603,7 +623,7 @@ h3 {
 }
 
 .runtime-grid,
-.lower-grid {
+.tool-launcher {
   display: grid;
   gap: 16px;
   margin: 0 auto;
@@ -615,16 +635,60 @@ h3 {
   margin-bottom: 16px;
 }
 
-.workflow-grid {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
-  margin: 0 auto 16px;
-  max-width: 1280px;
+.tool-launcher {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 16px;
 }
 
-.lower-grid {
-  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+.tool-launcher-button {
+  align-items: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-panel);
+  color: var(--color-text);
+  cursor: pointer;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 42px minmax(0, 1fr);
+  min-height: 76px;
+  padding: 14px;
+  text-align: left;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.tool-launcher-button:hover {
+  background: var(--color-surface-raised);
+  border-color: var(--color-border-strong);
+  transform: translateY(-1px);
+}
+
+.tool-launcher-button svg {
+  color: var(--color-brand);
+  fill: currentColor;
+  height: 24px;
+  justify-self: center;
+  width: 24px;
+}
+
+.tool-launcher-button span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.tool-launcher-button strong {
+  color: var(--color-heading);
+  font-weight: 820;
+}
+
+.tool-launcher-button small {
+  color: var(--color-muted);
+  font-weight: 720;
+  overflow-wrap: anywhere;
 }
 
 .panel {
@@ -1093,8 +1157,7 @@ h3 {
 
   .top-bar,
   .runtime-grid,
-  .workflow-grid,
-  .lower-grid {
+  .tool-launcher {
     grid-template-columns: 1fr;
   }
 

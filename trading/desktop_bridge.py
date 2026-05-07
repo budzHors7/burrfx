@@ -7,7 +7,6 @@ from pathlib import Path
 import re
 import sys
 
-from backtesting import backtester
 from config import LOGS_FOLDER
 from server.app.core.settings import settings
 from trading import broker_settings, journal, strategy_settings, trading_settings
@@ -189,13 +188,22 @@ def build_logs(limit=DESKTOP_LOG_LIMIT):
 
 def run_backtest(payload=None):
 
+    backtester = _load_backtester()
     payload = _normalize_backtest_payload(
-        payload or {}
+        payload or {},
+        backtester
     )
 
     return backtester.run_broker_backtest(
         payload
     )
+
+
+def _load_backtester():
+
+    from backtesting import backtester
+
+    return backtester
 
 
 def build_journal(limit=JOURNAL_ENTRY_LIMIT):
@@ -558,7 +566,7 @@ def _normalize_log_limit(limit):
     )
 
 
-def _normalize_backtest_payload(payload):
+def _normalize_backtest_payload(payload, backtester):
 
     if not isinstance(payload, dict):
         raise ValueError("Backtest payload must be a JSON object.")

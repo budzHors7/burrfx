@@ -3,9 +3,12 @@ import logging
 import os
 from datetime import datetime
 
-import MetaTrader5 as mt5
-
 from config import LOGS_FOLDER
+
+try:
+    import MetaTrader5 as mt5
+except ModuleNotFoundError:
+    mt5 = None
 
 
 DEBUG_DIR = os.path.join(LOGS_FOLDER, "debug")
@@ -151,7 +154,10 @@ def log_mt5_error(
     **context
 ):
 
-    code, message = mt5.last_error()
+    if mt5 is None:
+        code, message = None, "MetaTrader5 package is not available."
+    else:
+        code, message = mt5.last_error()
 
     log_event(
         event,

@@ -33,7 +33,8 @@ type Notice = {
 type ThemeMode = "light" | "dark";
 
 const POLL_INTERVAL_MS = 3000;
-const LOG_POLL_INTERVAL_MS = 5000;
+const LOG_POLL_INTERVAL_MS = 10000;
+const JOURNAL_POLL_INTERVAL_MS = 15000;
 const THEME_STORAGE_KEY = "burrfx-desktop-theme";
 
 type LogViewMode = "files" | "runtime";
@@ -52,6 +53,9 @@ function App() {
   const [backtestPending, setBacktestPending] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [backtestOpen, setBacktestOpen] = useState(false);
+  const [brokersOpen, setBrokersOpen] = useState(false);
+  const [journalOpen, setJournalOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialTheme);
   const [logViewMode, setLogViewMode] = useState<LogViewMode>("files");
@@ -122,17 +126,83 @@ function App() {
   }, []);
 
   useEffect(() => {
-    let mounted = true;
+    document.documentElement.dataset.theme = themeMode;
+    window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
+  }, [themeMode]);
 
-    async function loadEvidence() {
+  useEffect(() => {
+    if (!logsOpen) {
+      return;
+    }
+
+    let mounted = true;
+    let loading = false;
+
+    async function loadOpenLogs(showPending = false) {
+      if (loading) {
+        return;
+      }
+
+      loading = true;
+
+      if (showPending) {
+        setLogsPending(true);
+      }
+
       try {
-        const [nextLogs, nextJournal] = await Promise.all([
-          getAppLogs(),
-          getTradeJournal(),
-        ]);
+        const nextLogs = await getAppLogs();
 
         if (mounted) {
           setAppLogs(nextLogs);
+        }
+      } catch (error) {
+        if (mounted) {
+          setNotice({
+            tone: "error",
+            text: normalizeError(error),
+          });
+        }
+      } finally {
+        loading = false;
+
+        if (mounted && showPending) {
+          setLogsPending(false);
+        }
+      }
+    }
+
+    loadOpenLogs(appLogs === null);
+    const timer = window.setInterval(loadOpenLogs, LOG_POLL_INTERVAL_MS);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+    };
+  }, [logsOpen]);
+
+  useEffect(() => {
+    if (!journalOpen) {
+      return;
+    }
+
+    let mounted = true;
+    let loading = false;
+
+    async function loadOpenJournal(showPending = false) {
+      if (loading) {
+        return;
+      }
+
+      loading = true;
+
+      if (showPending) {
+        setJournalPending(true);
+      }
+
+      try {
+        const nextJournal = await getTradeJournal();
+
+        if (mounted) {
           setJournal(nextJournal);
         }
       } catch (error) {
@@ -142,22 +212,26 @@ function App() {
             text: normalizeError(error),
           });
         }
+      } finally {
+        loading = false;
+
+        if (mounted && showPending) {
+          setJournalPending(false);
+        }
       }
     }
 
-    loadEvidence();
-    const timer = window.setInterval(loadEvidence, LOG_POLL_INTERVAL_MS);
+    loadOpenJournal(journal === null);
+    const timer = window.setInterval(
+      loadOpenJournal,
+      JOURNAL_POLL_INTERVAL_MS,
+    );
 
     return () => {
       mounted = false;
       window.clearInterval(timer);
     };
-  }, []);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = themeMode;
-    window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
-  }, [themeMode]);
+  }, [journalOpen]);
 
   const nextThemeMode = themeMode === "dark" ? "light" : "dark";
 
@@ -165,15 +239,8 @@ function App() {
     setPending("refresh");
 
     try {
-      const [nextStatus, nextLogs, nextJournal] = await Promise.all([
-        getAppStatus(),
-        getAppLogs(),
-        getTradeJournal(),
-      ]);
-
+      const nextStatus = await getAppStatus();
       setStatus(nextStatus);
-      setAppLogs(nextLogs);
-      setJournal(nextJournal);
       setNotice({
         tone: "info",
         text: "Status refreshed.",
@@ -286,10 +353,6 @@ function App() {
           <div aria-label="BurrFx" className="brand-wordmark">
             Burr<span>Fx</span>
           </div>
-          <div>
-            <p className="eyebrow">Desktop</p>
-            <h1>Trading Control</h1>
-          </div>
         </div>
 
         <div className="top-actions">
@@ -311,15 +374,6 @@ function App() {
             type="button"
           >
             <GearIcon />
-          </button>
-          <button
-            aria-label="Open logs viewer"
-            className="icon-button"
-            onClick={() => setLogsOpen(true)}
-            title="Open logs viewer"
-            type="button"
-          >
-            <LogsIcon />
           </button>
           <button
             className="button ghost"
@@ -363,11 +417,49 @@ function App() {
           fileLogs={visibleFileLogs}
           mode={logViewMode}
           onCategoryChange={setLogCategory}
-          onClose={() => setLogsOpen(false)}
+          onClose={() => {
+            setLogsOpen(false);
+            setLogsPending(false);
+          }}
           onModeChange={setLogViewMode}
           onRefresh={refreshLogs}
           refreshDisabled={logsPending}
           runtimeLogs={runtimeLogs}
+        />
+      )}
+
+      {backtestOpen && (
+        <BacktestModal
+          bars={backtestBars}
+          brokers={status?.brokers ?? []}
+          onBarsChange={setBacktestBars}
+          onBrokerChange={setBacktestBroker}
+          onClose={() => setBacktestOpen(false)}
+          onRun={runBacktestFromUi}
+          result={backtestResult}
+          running={backtestPending}
+          selectedBroker={backtestBroker}
+          tradingRunning={status?.trading.running ?? false}
+        />
+      )}
+
+      {brokersOpen && (
+        <BrokersModal
+          activeCount={activeBrokers.length}
+          brokers={status?.brokers ?? []}
+          onClose={() => setBrokersOpen(false)}
+        />
+      )}
+
+      {journalOpen && (
+        <JournalModal
+          journal={journal}
+          onClose={() => {
+            setJournalOpen(false);
+            setJournalPending(false);
+          }}
+          onRefresh={refreshJournal}
+          refreshDisabled={journalPending}
         />
       )}
 
@@ -404,52 +496,220 @@ function App() {
         />
       </section>
 
-      <section className="workflow-grid" aria-label="Backtest and journal">
-        <BacktestPanel
-          bars={backtestBars}
-          brokers={status?.brokers ?? []}
-          result={backtestResult}
-          running={backtestPending}
-          selectedBroker={backtestBroker}
-          tradingRunning={status?.trading.running ?? false}
-          onBarsChange={setBacktestBars}
-          onBrokerChange={setBacktestBroker}
-          onRun={runBacktestFromUi}
-        />
-        <JournalPanel
-          journal={journal}
-          onRefresh={refreshJournal}
-          refreshDisabled={journalPending}
-        />
-      </section>
-
-      <section className="lower-grid">
-        <section className="panel broker-panel">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Active Broker Settings</p>
-              <h2>Brokers</h2>
-            </div>
-            <span className="metric">{activeBrokers.length} active</span>
-          </div>
-          <BrokerTable brokers={status?.brokers ?? []} />
-        </section>
-
-        <LogsViewer
-          appLogs={appLogs}
-          category={logCategory}
-          categories={logCategories}
-          fileLogs={visibleFileLogs}
-          mode={logViewMode}
-          onCategoryChange={setLogCategory}
-          onModeChange={setLogViewMode}
-          onOpenLarge={() => setLogsOpen(true)}
-          onRefresh={refreshLogs}
-          refreshDisabled={logsPending}
-          runtimeLogs={runtimeLogs}
-        />
+      <section className="tool-launcher" aria-label="Desktop tools">
+        <button
+          className="tool-launcher-button"
+          onClick={() => setBrokersOpen(true)}
+          type="button"
+        >
+          <BrokersIcon />
+          <span>
+            <strong>Brokers</strong>
+            <small>{activeBrokers.length} active</small>
+          </span>
+        </button>
+        <button
+          className="tool-launcher-button"
+          onClick={() => setBacktestOpen(true)}
+          type="button"
+        >
+          <BacktestIcon />
+          <span>
+            <strong>Backtest</strong>
+            <small>
+              {backtestResult
+                ? `${backtestResult.summary.trade_count} trades`
+                : "Strategy check"}
+            </small>
+          </span>
+        </button>
+        <button
+          className="tool-launcher-button"
+          onClick={() => setJournalOpen(true)}
+          type="button"
+        >
+          <JournalIcon />
+          <span>
+            <strong>Journal</strong>
+            <small>
+              {journal ? `${journal.entries.length} rows` : "Open journal"}
+            </small>
+          </span>
+        </button>
+        <button
+          className="tool-launcher-button"
+          onClick={() => setLogsOpen(true)}
+          type="button"
+        >
+          <LogsIcon />
+          <span>
+            <strong>Logs</strong>
+            <small>
+              {appLogs
+                ? logViewMode === "files"
+                  ? `${visibleFileLogs.length} file lines`
+                  : `${runtimeLogs.length} runtime lines`
+                : "Open logs"}
+            </small>
+          </span>
+        </button>
       </section>
     </main>
+  );
+}
+
+function BacktestModal({
+  bars,
+  brokers,
+  result,
+  running,
+  selectedBroker,
+  tradingRunning,
+  onBarsChange,
+  onBrokerChange,
+  onClose,
+  onRun,
+}: {
+  bars: string;
+  brokers: BrokerSummary[];
+  result: BacktestReport | null;
+  running: boolean;
+  selectedBroker: string;
+  tradingRunning: boolean;
+  onBarsChange: (value: string) => void;
+  onBrokerChange: (value: string) => void;
+  onClose: () => void;
+  onRun: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        aria-labelledby="backtest-modal-title"
+        aria-modal="true"
+        className="settings-modal tool-modal"
+        role="dialog"
+      >
+        <div className="modal-heading">
+          <div>
+            <p className="eyebrow">Backtest</p>
+            <h2 id="backtest-modal-title">Strategy Check</h2>
+          </div>
+          <button
+            aria-label="Close backtest"
+            className="icon-button"
+            onClick={onClose}
+            title="Close backtest"
+            type="button"
+          >
+            <CloseIcon />
+          </button>
+        </div>
+        <div className="modal-panel-content">
+          <BacktestPanel
+            bars={bars}
+            brokers={brokers}
+            onBarsChange={onBarsChange}
+            onBrokerChange={onBrokerChange}
+            onRun={onRun}
+            result={result}
+            running={running}
+            selectedBroker={selectedBroker}
+            tradingRunning={tradingRunning}
+          />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function BrokersModal({
+  activeCount,
+  brokers,
+  onClose,
+}: {
+  activeCount: number;
+  brokers: BrokerSummary[];
+  onClose: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        aria-labelledby="brokers-modal-title"
+        aria-modal="true"
+        className="settings-modal tool-modal"
+        role="dialog"
+      >
+        <div className="modal-heading">
+          <div>
+            <p className="eyebrow">Active Broker Settings</p>
+            <h2 id="brokers-modal-title">Brokers</h2>
+          </div>
+          <div className="modal-heading-actions">
+            <span className="metric">{activeCount} active</span>
+            <button
+              aria-label="Close brokers"
+              className="icon-button"
+              onClick={onClose}
+              title="Close brokers"
+              type="button"
+            >
+              <CloseIcon />
+            </button>
+          </div>
+        </div>
+        <div className="modal-panel-content">
+          <section className="panel broker-panel">
+            <BrokerTable brokers={brokers} />
+          </section>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function JournalModal({
+  journal,
+  refreshDisabled,
+  onClose,
+  onRefresh,
+}: {
+  journal: TradeJournalResponse | null;
+  refreshDisabled: boolean;
+  onClose: () => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        aria-labelledby="journal-modal-title"
+        aria-modal="true"
+        className="settings-modal tool-modal"
+        role="dialog"
+      >
+        <div className="modal-heading">
+          <div>
+            <p className="eyebrow">Journal</p>
+            <h2 id="journal-modal-title">Trade Journal</h2>
+          </div>
+          <button
+            aria-label="Close journal"
+            className="icon-button"
+            onClick={onClose}
+            title="Close journal"
+            type="button"
+          >
+            <CloseIcon />
+          </button>
+        </div>
+        <div className="modal-panel-content">
+          <JournalPanel
+            journal={journal}
+            onRefresh={onRefresh}
+            refreshDisabled={refreshDisabled}
+          />
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -1804,6 +2064,33 @@ function LogsIcon() {
     <svg aria-hidden="true" viewBox="0 0 24 24">
       <path d="M5 3h14v18H5V3Zm2 2v14h10V5H7Z" />
       <path d="M9 8h6v2H9V8Zm0 4h6v2H9v-2Zm0 4h4v2H9v-2Z" />
+    </svg>
+  );
+}
+
+function BrokersIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M4 4h16v5H4V4Zm2 2v1h12V6H6Zm-2 5h16v9H4v-9Zm2 2v5h12v-5H6Z" />
+      <path d="M8 14h2v2H8v-2Zm4 0h4v2h-4v-2Z" />
+    </svg>
+  );
+}
+
+function BacktestIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M4 19h16v2H4v-2Zm1-4 4-4 3 3 6-8 1.6 1.2-7.4 9.8-3.1-3.1-2.7 2.7L5 15Z" />
+      <path d="M5 5h3v8H5V5Zm11 7h3v5h-3v-5Zm-5-5h3v10h-3V7Z" />
+    </svg>
+  );
+}
+
+function JournalIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M6 3h10l3 3v15H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3Zm0 2a1 1 0 0 0-1 1v11.2A3 3 0 0 1 6 17h11V7h-3V5H6Zm0 14a1 1 0 0 0 0 2h11v-2H6Z" />
+      <path d="M8 9h7v2H8V9Zm0 4h6v2H8v-2Z" />
     </svg>
   );
 }

@@ -223,6 +223,32 @@ class StochasticOscillatorSignalTests(unittest.TestCase):
 
         self.assertIsNone(signal)
 
+    def test_deriv_exit_check_can_read_crash_overbought_sell_cross(self):
+        broker_runtime.set_active_broker(
+            {
+                "id": "deriv",
+                "label": "Deriv",
+            }
+        )
+
+        strategy = _strategy()
+        strategy["enforce_deriv_symbol_signal"] = False
+        signal = strategy_engine.evaluate_strategy_signal(
+            "Crash 1000 Index",
+            strategy,
+            _frame(
+                ([100.0] * 22)
+                + [
+                    100.0,
+                    100.0,
+                    30.0,
+                ]
+            ),
+        )
+
+        self.assertIsNotNone(signal)
+        self.assertEqual(signal["signal"], "SELL")
+
     def test_deriv_boom_ignores_oversold_buy_cross(self):
         broker_runtime.set_active_broker(
             {
@@ -288,6 +314,7 @@ class StochasticOscillatorSignalTests(unittest.TestCase):
 class BrokerStrategyConfigTests(unittest.TestCase):
     def tearDown(self):
         broker_runtime.clear_active_broker()
+        strategy_engine.LAST_EVALUATED_CANDLES.clear()
 
     def test_deriv_default_strategy_setting_selects_stochastic(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -431,6 +458,76 @@ class BrokerStrategyConfigTests(unittest.TestCase):
         )
         self.assertFalse(
             signal["execution_overrides"]["use_take_profit"]
+        )
+
+    def test_deriv_signal_uses_manual_trade_count_within_broker_cap(self):
+        broker_runtime.set_active_broker(
+            {
+                "id": "deriv",
+                "strategy_settings": {
+                    "stochastic_oscillator": {
+                        "enabled": True,
+                        "trades_per_signal": 12,
+                        "max_positions_per_symbol": 25,
+                    }
+                },
+            }
+        )
+
+        signal = strategy_engine.evaluate_strategy_signal(
+            "Crash 1000 Index",
+            strategy_engine.get_enabled_strategies()[0],
+            _frame(
+                ([0.0] * 22)
+                + [
+                    0.0,
+                    0.0,
+                    70.0,
+                ]
+            ),
+        )
+
+        self.assertIsNotNone(signal)
+        self.assertEqual(
+            signal["trades_per_signal"],
+            12,
+        )
+        self.assertEqual(
+            signal["execution_overrides"]["max_positions_per_symbol"],
+            25,
+        )
+
+    def test_deriv_signal_clamps_manual_trade_count_to_broker_cap(self):
+        broker_runtime.set_active_broker(
+            {
+                "id": "deriv",
+                "strategy_settings": {
+                    "stochastic_oscillator": {
+                        "enabled": True,
+                        "trades_per_signal": 30,
+                        "max_positions_per_symbol": 25,
+                    }
+                },
+            }
+        )
+
+        signal = strategy_engine.evaluate_strategy_signal(
+            "Crash 1000 Index",
+            strategy_engine.get_enabled_strategies()[0],
+            _frame(
+                ([0.0] * 22)
+                + [
+                    0.0,
+                    0.0,
+                    70.0,
+                ]
+            ),
+        )
+
+        self.assertIsNotNone(signal)
+        self.assertEqual(
+            signal["trades_per_signal"],
+            25,
         )
 
     def test_deriv_active_broker_respects_disabled_strategy_option(self):

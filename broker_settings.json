@@ -57,7 +57,8 @@
             "M15",
             "M30",
             "H1"
-          ]
+          ],
+          "trades_per_signal": 1
         },
         "trendline_price_action": {
           "enabled": true,
@@ -66,7 +67,8 @@
             "H1",
             "H4",
             "D1"
-          ]
+          ],
+          "trades_per_signal": 1
         },
         "smc_liquidity_sweep": {
           "enabled": true,
@@ -75,7 +77,8 @@
             "M15",
             "M30",
             "H1"
-          ]
+          ],
+          "trades_per_signal": 1
         },
         "high_impact_news": {
           "enabled": true,
@@ -83,7 +86,8 @@
           "recommended_timeframes": [
             "M1",
             "M5"
-          ]
+          ],
+          "trades_per_signal": 1
         }
       }
     },
@@ -126,7 +130,7 @@
           "lower_level": 25,
           "price_field": "low_high",
           "method": "simple",
-          "trades_per_signal": 5,
+          "trades_per_signal": 10,
           "max_positions_per_symbol": 25,
           "use_take_profit": false
         }

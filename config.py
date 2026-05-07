@@ -1,3 +1,16 @@
+from runtime_paths import (
+    BROKER_SETTINGS_FILE,
+    DATA_FOLDER,
+    LOGS_FOLDER,
+    RESULTS_FOLDER,
+    RUNTIME_ROOT as RUNTIME_ROOT_PATH,
+    SERVER_ENV_FILE,
+    STRATEGY_SETTINGS_FILE,
+    TRADING_SETTINGS_FILE,
+    SOURCE_ROOT,
+)
+
+
 # config.py
 
 # =========================
@@ -58,9 +71,8 @@ INITIAL_BALANCE = 400
 # =========================
 # OTHER SETTINGS
 # =========================
-DATA_FOLDER = "data"
-RESULTS_FOLDER = "results"
-LOGS_FOLDER = "logs"
+PROJECT_ROOT = str(SOURCE_ROOT)
+RUNTIME_ROOT = str(RUNTIME_ROOT_PATH)
 
 # For order execution
 MAGIC_NUMBER = 234000

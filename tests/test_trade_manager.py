@@ -162,6 +162,20 @@ def _rates_with_previous_candle(
     return rates
 
 
+def _stochastic_rates(closes, *, high=100.0, low=0.0):
+
+    return [
+        {
+            "time": index + 1,
+            "open": close,
+            "high": high,
+            "low": low,
+            "close": close,
+        }
+        for index, close in enumerate(closes)
+    ]
+
+
 class SafeProfitPyramidingPolicyTests(unittest.TestCase):
 
     def _policy_result(
@@ -200,10 +214,24 @@ class SafeProfitPyramidingPolicyTests(unittest.TestCase):
             "first_bot_trade",
         )
 
-    def test_blocks_new_entry_below_safe_bot_floating_profit(self):
+    def test_allows_different_symbol_below_safe_bot_floating_profit(self):
         allowed, policy = self._policy_result([
             _bot_position(
                 symbol="GBPUSDm",
+                profit=19.99,
+            )
+        ])
+
+        self.assertTrue(allowed)
+        self.assertEqual(
+            policy["reason"],
+            "new_symbol_signal",
+        )
+
+    def test_blocks_same_symbol_addon_below_safe_bot_floating_profit(self):
+        allowed, policy = self._policy_result([
+            _bot_position(
+                symbol="EURUSDm",
                 profit=19.99,
             )
         ])
@@ -225,13 +253,13 @@ class SafeProfitPyramidingPolicyTests(unittest.TestCase):
         self.assertTrue(allowed)
         self.assertEqual(
             policy["reason"],
-            "safe_profit_new_symbol",
+            "new_symbol_signal",
         )
 
-    def test_manual_positions_do_not_unlock_threshold(self):
+    def test_manual_positions_do_not_unlock_same_symbol_threshold(self):
         allowed, policy = self._policy_result([
             _bot_position(
-                symbol="GBPUSDm",
+                symbol="EURUSDm",
                 profit=0.0,
             ),
             _manual_position(
@@ -477,7 +505,7 @@ class TradeExecutionVolumeFallbackTests(unittest.TestCase):
         self.assertEqual(order_ticket, 234567)
         self.assertEqual(sent_requests[0]["sl"], 5585.0)
 
-    def test_deriv_buy_falls_back_to_pivot_stop_when_tight_stop_is_unsafe(self):
+    def test_deriv_buy_uses_pivot_take_profit_when_profile_tp_is_off(self):
         fake_mt5 = types.SimpleNamespace(
             ORDER_TYPE_BUY=0,
             ORDER_TYPE_SELL=1,
@@ -500,7 +528,7 @@ class TradeExecutionVolumeFallbackTests(unittest.TestCase):
                 volume_step=0.1,
                 point=0.001,
                 digits=3,
-                trade_stops_level=8000,
+                trade_stops_level=100,
             )
 
         fake_mt5.symbol_info = symbol_info
@@ -541,6 +569,11 @@ class TradeExecutionVolumeFallbackTests(unittest.TestCase):
                     "S2": 5560.0,
                 },
             ),
+            patch.object(
+                trade_manager,
+                "get_active_broker",
+                return_value={"id": "deriv"},
+            ),
             patch.object(trade_manager, "log_event"),
             patch.object(trade_manager, "log_mt5_error"),
             patch.object(trade_manager, "log_trade"),
@@ -554,7 +587,93 @@ class TradeExecutionVolumeFallbackTests(unittest.TestCase):
             )
 
         self.assertEqual(order_ticket, 345678)
-        self.assertEqual(sent_requests[0]["sl"], 5575.0)
+        self.assertEqual(sent_requests[0]["sl"], 5585.0)
+        self.assertEqual(sent_requests[0]["tp"], 5605.0)
+
+    def test_deriv_buy_does_not_use_pivot_as_stop_when_tight_stop_is_unsafe(self):
+        fake_mt5 = types.SimpleNamespace(
+            ORDER_TYPE_BUY=0,
+            ORDER_TYPE_SELL=1,
+            TRADE_ACTION_DEAL=2,
+            ORDER_TIME_GTC=3,
+            ORDER_FILLING_FOK=4,
+            TRADE_RETCODE_DONE=10009,
+            TRADE_RETCODE_NO_MONEY=10019,
+            TRADE_RETCODE_INVALID_VOLUME=10014,
+            TRADE_RETCODE_LIMIT_VOLUME=10034,
+            POSITION_TYPE_BUY=0,
+            POSITION_TYPE_SELL=1,
+        )
+        sent_requests = []
+
+        def symbol_info(_symbol):
+            return types.SimpleNamespace(
+                volume_min=0.1,
+                volume_max=5.0,
+                volume_step=0.1,
+                point=0.001,
+                digits=3,
+                trade_stops_level=8000,
+            )
+
+        fake_mt5.symbol_info = symbol_info
+        fake_mt5.positions_get = lambda symbol=None: []
+        fake_mt5.order_check = lambda request: types.SimpleNamespace(
+            retcode=fake_mt5.TRADE_RETCODE_DONE,
+            comment="ok",
+        )
+
+        def order_send(request):
+            sent_requests.append(request)
+            return types.SimpleNamespace(
+                retcode=fake_mt5.TRADE_RETCODE_DONE,
+                comment="Filled",
+                order=456780,
+            )
+
+        fake_mt5.order_send = order_send
+        fake_mt5.last_error = lambda: (0, "OK")
+
+        settings = _settings()
+        settings["use_take_profit"] = False
+
+        with (
+            patch.object(trade_manager, "mt5", fake_mt5),
+            patch.object(
+                trade_manager,
+                "get_trading_settings",
+                return_value=settings,
+            ),
+            patch.object(
+                trade_manager,
+                "get_daily_pivots",
+                return_value={
+                    "R1": 5605.0,
+                    "R2": 5620.0,
+                    "S1": 5575.0,
+                    "S2": 5560.0,
+                },
+            ),
+            patch.object(
+                trade_manager,
+                "get_active_broker",
+                return_value={"id": "deriv"},
+            ),
+            patch.object(trade_manager, "log_event"),
+            patch.object(trade_manager, "log_mt5_error"),
+            patch.object(trade_manager, "log_trade"),
+        ):
+            order_ticket = trade_manager.execute_trade(
+                symbol="Crash 1000 Index",
+                order_type="BUY",
+                lot_size=0.3,
+                price=5590.0,
+                atr=10.0,
+            )
+
+        self.assertEqual(order_ticket, 456780)
+        self.assertEqual(sent_requests[0]["sl"], 5580.0)
+        self.assertEqual(sent_requests[0]["tp"], 5605.0)
 
     def test_execute_trade_retries_with_lower_volume_after_no_money(self):
         fake_mt5 = types.SimpleNamespace(
@@ -826,6 +945,119 @@ class TradeExecutionBatchTests(unittest.TestCase):
             [0.05, 0.05],
         )
 
+    def test_execute_trade_batch_allows_manual_count_above_default_batch_size(self):
+        (
+            fake_mt5,
+            _order_check_volumes,
+            order_send_volumes,
+            _sent_orders,
+        ) = self._fake_mt5_for_batch()
+
+        settings = _settings()
+        settings["use_take_profit"] = False
+        settings["max_positions_per_symbol"] = 10
+
+        with (
+            patch.object(trade_manager, "mt5", fake_mt5),
+            patch.object(
+                trade_manager,
+                "get_trading_settings",
+                return_value=settings,
+            ),
+            patch.object(trade_manager, "log_event"),
+            patch.object(trade_manager, "log_mt5_error"),
+            patch.object(trade_manager, "log_trade"),
+        ):
+            tickets = trade_manager.execute_trade_batch(
+                symbol="Crash 1000 Index",
+                order_type="BUY",
+                lot_size=0.05,
+                price=5590.0,
+                atr=10.0,
+                trade_count=7,
+                settings_overrides={
+                    "use_take_profit": False,
+                    "max_positions_per_symbol": 10,
+                },
+            )
+
+        self.assertEqual(
+            tickets,
+            [1000, 1001, 1002, 1003, 1004, 1005, 1006],
+        )
+        self.assertEqual(
+            order_send_volumes,
+            [0.05] * 7,
+        )
+
+    def test_execute_trade_batch_continues_after_one_order_error(self):
+        (
+            fake_mt5,
+            _order_check_volumes,
+            order_send_volumes,
+            _sent_orders,
+        ) = self._fake_mt5_for_batch()
+        send_attempts = []
+
+        def order_send(request):
+            order_send_volumes.append(
+                request["volume"]
+            )
+            send_attempts.append(request)
+
+            if len(send_attempts) == 2:
+                raise RuntimeError("Broker rejected burst order")
+
+            return types.SimpleNamespace(
+                retcode=fake_mt5.TRADE_RETCODE_DONE,
+                comment="Filled",
+                order=1000 + len(send_attempts) - 1,
+            )
+
+        fake_mt5.order_send = order_send
+        settings = _settings()
+        settings["use_take_profit"] = False
+        settings["max_positions_per_symbol"] = 3
+
+        with (
+            patch.object(trade_manager, "mt5", fake_mt5),
+            patch.object(
+                trade_manager,
+                "get_trading_settings",
+                return_value=settings,
+            ),
+            patch.object(trade_manager, "log_event") as log_event,
+            patch.object(trade_manager, "log_mt5_error"),
+            patch.object(trade_manager, "log_trade"),
+        ):
+            tickets = trade_manager.execute_trade_batch(
+                symbol="Crash 1000 Index",
+                order_type="BUY",
+                lot_size=0.05,
+                price=5590.0,
+                atr=10.0,
+                trade_count=3,
+                settings_overrides={
+                    "use_take_profit": False,
+                    "max_positions_per_symbol": 3,
+                },
+            )
+
+        self.assertEqual(
+            tickets,
+            [1000, 1002],
+        )
+        self.assertEqual(
+            order_send_volumes,
+            [0.05, 0.05, 0.05],
+        )
+        self.assertTrue(
+            any(
+                call.args[0] == "execute_trade_batch_order_failed"
+                for call in log_event.call_args_list
+            )
+        )
+
 
 class DerivPreviousCandleHalfTrailingTests(unittest.TestCase):
 
@@ -839,7 +1071,8 @@ class DerivPreviousCandleHalfTrailingTests(unittest.TestCase):
         previous_high=None,
         previous_low=None,
         settings_updates=None,
-        daily_pivots=None
+        daily_pivots=None,
+        active_broker=None
     ):
 
         requests = []
@@ -910,6 +1143,11 @@ class DerivPreviousCandleHalfTrailingTests(unittest.TestCase):
                 trade_manager,
                 "get_daily_pivots",
                 return_value=daily_pivots,
+            ),
+            patch.object(
+                trade_manager,
+                "get_active_broker",
+                return_value=active_broker,
             ),
             patch.object(trade_manager, "log_event"),
             patch.object(trade_manager, "log_mt5_error"),
@@ -1066,7 +1304,7 @@ class DerivPreviousCandleHalfTrailingTests(unittest.TestCase):
 
         self.assertEqual(requests, [])
 
-    def test_deriv_previous_half_trailing_does_not_restore_take_profit(self):
+    def test_deriv_previous_half_trailing_restores_pivot_take_profit(self):
         position = _bot_position(
             symbol="Crash 1000 Index",
             side="BUY",
@@ -1084,22 +1322,19 @@ class DerivPreviousCandleHalfTrailingTests(unittest.TestCase):
             ask=5591.0,
             previous_high=5584.0,
             previous_low=5576.0,
-            settings_updates={
-                "use_take_profit": True,
-                "extend_take_profit": True,
-            },
             daily_pivots={
                 "R1": 5600.0,
                 "R2": 5610.0,
                 "S1": 5540.0,
                 "S2": 5530.0,
             },
+            active_broker={"id": "deriv"},
         )
 
         self.assertEqual(len(requests), 1)
         self.assertEqual(requests[0]["position"], 444)
         self.assertEqual(requests[0]["sl"], 5580.0)
-        self.assertEqual(requests[0]["tp"], 0.0)
+        self.assertEqual(requests[0]["tp"], 5600.0)
 
 
 class TradeExecutionPyramidingTests(unittest.TestCase):
@@ -1167,6 +1402,193 @@ class TradeExecutionPyramidingTests(unittest.TestCase):
         self.assertEqual(order_ticket, 654321)
         self.assertEqual(order_check_volumes, [0.3])
         self.assertEqual(order_send_volumes, [0.3])
+
+
+class DerivM1ExitSignalTests(unittest.TestCase):
+
+    def _run_exit_check(
+        self,
+        positions,
+        rates,
+        symbol="Crash 1000 Index",
+        bid=5590.0,
+        ask=5591.0,
+    ):
+
+        fake_mt5 = _build_fake_mt5(positions)
+        fake_mt5.TIMEFRAME_M1 = 1
+        sent_requests = []
+        copy_rate_calls = []
+
+        def copy_rates_from_pos(
+            copied_symbol,
+            timeframe_code,
+            start_pos,
+            bars
+        ):
+            copy_rate_calls.append((
+                copied_symbol,
+                timeframe_code,
+                start_pos,
+                bars,
+            ))
+            return rates
+
+        fake_mt5.copy_rates_from_pos = copy_rates_from_pos
+        fake_mt5.symbol_info_tick = (
+            lambda _symbol: types.SimpleNamespace(
+                bid=bid,
+                ask=ask,
+            )
+        )
+
+        def order_send(request):
+            sent_requests.append(request)
+            return types.SimpleNamespace(
+                retcode=fake_mt5.TRADE_RETCODE_DONE,
+                comment="Closed",
+                order=987654,
+            )
+
+        fake_mt5.order_send = order_send
+
+        with (
+            patch.object(trade_manager, "mt5", fake_mt5),
+            patch.object(trade_manager, "log_event"),
+            patch.object(trade_manager, "log_mt5_error"),
+        ):
+            closed_count = (
+                trade_manager.close_deriv_positions_on_m1_exit_signal(
+                    symbol
+                )
+            )
+
+        return closed_count, sent_requests, copy_rate_calls
+
+    def test_crash_buy_positions_close_on_m1_sell_cross_above_75(self):
+        position = _bot_position(
+            symbol="Crash 1000 Index",
+            side="BUY",
+            ticket=777,
+        )
+        position.volume = 0.2
+
+        closed_count, requests, copy_rate_calls = (
+            self._run_exit_check(
+                [position],
+                _stochastic_rates(
+                    ([100.0] * 22)
+                    + [
+                        100.0,
+                        100.0,
+                        30.0,
+                    ]
+                ),
+            )
+        )
+
+        self.assertEqual(closed_count, 1)
+        self.assertEqual(copy_rate_calls[0][1], 1)
+        self.assertEqual(requests[0]["position"], 777)
+        self.assertEqual(requests[0]["type"], 1)
+        self.assertEqual(requests[0]["price"], 5590.0)
+        self.assertEqual(requests[0]["volume"], 0.2)
+
+    def test_crash_buy_positions_close_when_m1_values_are_above_75_without_cross(self):
+        position = _bot_position(
+            symbol="Crash 1000 Index",
+            side="BUY",
+            ticket=778,
+        )
+        position.volume = 0.2
+
+        closed_count, requests, _copy_rate_calls = (
+            self._run_exit_check(
+                [position],
+                _stochastic_rates([100.0] * 25),
+            )
+        )
+
+        self.assertEqual(closed_count, 1)
+        self.assertEqual(requests[0]["position"], 778)
+
+    def test_boom_sell_positions_close_on_m1_buy_cross_below_25(self):
+        position = _bot_position(
+            symbol="Boom 1000 Index",
+            side="SELL",
+            ticket=888,
+        )
+        position.volume = 0.3
+
+        closed_count, requests, copy_rate_calls = (
+            self._run_exit_check(
+                [position],
+                _stochastic_rates(
+                    ([0.0] * 22)
+                    + [
+                        0.0,
+                        0.0,
+                        70.0,
+                    ]
+                ),
+                symbol="Boom 1000 Index",
+                bid=14349.0,
+                ask=14350.0,
+            )
+        )
+
+        self.assertEqual(closed_count, 1)
+        self.assertEqual(copy_rate_calls[0][1], 1)
+        self.assertEqual(requests[0]["position"], 888)
+        self.assertEqual(requests[0]["type"], 0)
+        self.assertEqual(requests[0]["price"], 14350.0)
+        self.assertEqual(requests[0]["volume"], 0.3)
+
+    def test_boom_sell_positions_close_when_m1_values_are_below_25_without_cross(self):
+        position = _bot_position(
+            symbol="Boom 1000 Index",
+            side="SELL",
+            ticket=889,
+        )
+        position.volume = 0.3
+
+        closed_count, requests, _copy_rate_calls = (
+            self._run_exit_check(
+                [position],
+                _stochastic_rates([0.0] * 25),
+                symbol="Boom 1000 Index",
+                bid=14349.0,
+                ask=14350.0,
+            )
+        )
+
+        self.assertEqual(closed_count, 1)
+        self.assertEqual(requests[0]["position"], 889)
+
+    def test_crash_sell_position_is_not_closed_by_crash_exit_signal(self):
+        position = _bot_position(
+            symbol="Crash 1000 Index",
+            side="SELL",
+            ticket=999,
+        )
+        position.volume = 0.2
+
+        closed_count, requests, _copy_rate_calls = (
+            self._run_exit_check(
+                [position],
+                _stochastic_rates(
+                    ([100.0] * 22)
+                    + [
+                        100.0,
+                        100.0,
+                        30.0,
+                    ]
+                ),
+            )
+        )
+
+        self.assertEqual(closed_count, 0)
+        self.assertEqual(requests, [])
 
 
 if __name__ == "__main__":

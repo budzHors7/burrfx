@@ -26,7 +26,7 @@ from trading.live_trader import start_live_trading
 from utils import clear_screen
 
 
-def main():
+def main(argv=None):
 
     parser = argparse.ArgumentParser(
         description="Run one BurrFx broker worker."
@@ -36,7 +36,7 @@ def main():
         required=True,
         help="Broker id from broker_settings.json"
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     init_debug_logger()
     init_trade_log()

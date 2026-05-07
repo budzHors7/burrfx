@@ -1,6 +1,7 @@
 logs/
 results/
 data/
+build/
 
 .vent/
 __pycache__/

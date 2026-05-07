@@ -2,9 +2,13 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from config import SERVER_ENV_FILE
+
 
 def _load_env_file() -> None:
-    env_path = Path(__file__).resolve().parents[2] / ".env"
+    env_path = Path(
+        os.getenv("BURRFX_SERVER_ENV_FILE", SERVER_ENV_FILE)
+    )
 
     if not env_path.exists():
         return

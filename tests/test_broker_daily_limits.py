@@ -114,6 +114,39 @@ class BrokerDailyLimitsTests(unittest.TestCase):
                 }
             )
 
+    def test_set_broker_strategy_trade_count_clamps_to_strategy_cap(self):
+        settings = copy.deepcopy(broker_settings.DEFAULT_SETTINGS)
+        saved = []
+
+        with (
+            patch.object(
+                broker_settings,
+                "load_broker_settings",
+                return_value=settings,
+            ),
+            patch.object(
+                broker_settings,
+                "save_broker_settings",
+                side_effect=lambda payload: saved.append(
+                    copy.deepcopy(payload)
+                ),
+            ),
+        ):
+            result = broker_settings.set_broker_strategy_trade_count(
+                "deriv",
+                "stochastic_oscillator",
+                30,
+            )
+
+        self.assertEqual(result["trades_per_signal"], 25)
+        self.assertEqual(result["max_positions_per_symbol"], 25)
+        self.assertEqual(
+            saved[0]["brokers"]["deriv"]["strategy_settings"][
+                "stochastic_oscillator"
+            ]["trades_per_signal"],
+            25,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

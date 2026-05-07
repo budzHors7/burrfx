@@ -16,10 +16,12 @@ from .account import get_account_info
 from config import (
     ENABLE_DAILY_LOCK,
     INITIAL_BALANCE,
+    MAGIC_NUMBER,
     SYMBOLS
 )
 from .account_stats import get_stats
 from .trade_manager import (
+    close_deriv_positions_on_m1_exit_signal,
     execute_trade,
     execute_trade_batch
 )
@@ -66,6 +68,8 @@ from trading.trading_settings import (
     get_trading_profile_label
 )
 
+REALTIME_POSITION_MANAGER_INTERVAL_SECONDS = 2.0
+
 
 def _notify_status(
     status_callback=None,
@@ -79,6 +83,107 @@ def _notify_status(
         status_callback(payload)
     except Exception:
         return
+
+
+def _run_realtime_position_manager(
+    position_manager,
+    last_run_at=None,
+    interval_seconds=REALTIME_POSITION_MANAGER_INTERVAL_SECONDS
+):
+
+    if position_manager is None:
+        return last_run_at
+
+    now = time.monotonic()
+
+    if (
+        last_run_at is not None
+        and interval_seconds > 0
+        and now - last_run_at < interval_seconds
+    ):
+        return last_run_at
+
+    try:
+        position_manager()
+    except Exception as exc:
+        log_event(
+            "realtime_position_manager_failed",
+            level="error",
+            error=str(exc)
+        )
+
+    return now
+
+
+def manage_realtime_open_positions():
+
+    positions = mt5.positions_get()
+
+    if positions is None:
+        log_mt5_error(
+            "realtime_position_manager_failed",
+            reason="positions_unavailable"
+        )
+        return
+
+    symbols = []
+    seen = set()
+
+    for position in positions:
+        if not _is_realtime_managed_position(position):
+            continue
+
+        symbol = getattr(
+            position,
+            "symbol",
+            None
+        )
+
+        if not symbol or symbol in seen:
+            continue
+
+        seen.add(symbol)
+        symbols.append(symbol)
+
+    if not symbols:
+        log_event(
+            "realtime_position_manager_skipped",
+            reason="no_open_positions"
+        )
+        return
+
+    timeframe_code = get_slowest_enabled_strategy_timeframe()
+    timeframe_label = get_slowest_enabled_strategy_timeframe_label()
+
+    for symbol in symbols:
+        try:
+            if close_deriv_positions_on_m1_exit_signal(symbol) > 0:
+                continue
+
+            trail_positions(
+                symbol,
+                timeframe_code=timeframe_code,
+                timeframe_label=timeframe_label
+            )
+        except Exception as exc:
+            log_event(
+                "realtime_trailing_symbol_failed",
+                level="error",
+                symbol=symbol,
+                error=str(exc)
+            )
+
+
+def _is_realtime_managed_position(position):
+
+    comment = str(
+        getattr(position, "comment", "") or ""
+    ).upper()
+
+    return (
+        getattr(position, "magic", None) == MAGIC_NUMBER
+        or comment.startswith("BURRFX")
+    )
 
 
 def _should_stop(stop_event=None):
@@ -575,7 +680,8 @@ def start_live_trading(
             reference_symbol,
             interactive=interactive,
             stop_event=stop_event,
-            status_callback=status_callback
+            status_callback=status_callback,
+            realtime_position_manager=manage_realtime_open_positions
         )
 
         if (
@@ -690,7 +796,10 @@ def start_live_trading(
                     reference_symbol,
                     interactive=interactive,
                     stop_event=stop_event,
-                    status_callback=status_callback
+                    status_callback=status_callback,
+                    realtime_position_manager=(
+                        manage_realtime_open_positions
+                    )
                 )
                 if (
                     new_candle is None
@@ -757,7 +866,10 @@ def start_live_trading(
                     ,
                     interactive=interactive,
                     stop_event=stop_event,
-                    status_callback=status_callback
+                    status_callback=status_callback,
+                    realtime_position_manager=(
+                        manage_realtime_open_positions
+                    )
                 )
                 if (
                     new_candle is None
@@ -897,7 +1009,8 @@ def start_live_trading(
                 reference_symbol,
                 interactive=interactive,
                 stop_event=stop_event,
-                status_callback=status_callback
+                status_callback=status_callback,
+                realtime_position_manager=manage_realtime_open_positions
             )
 
             if (
@@ -1090,8 +1203,30 @@ def wait_for_next_trading_cycle(
     reference_symbol,
     interactive=True,
     stop_event=None,
-    status_callback=None
+    status_callback=None,
+    realtime_position_manager=None,
+    realtime_position_manager_interval_seconds=(
+        REALTIME_POSITION_MANAGER_INTERVAL_SECONDS
+    )
 ):
+
+    last_realtime_position_manager_run = None
+
+    def render_waiting_cycle(remaining_seconds):
+        nonlocal last_realtime_position_manager_run
+
+        last_realtime_position_manager_run = (
+            _run_realtime_position_manager(
+                realtime_position_manager,
+                last_realtime_position_manager_run,
+                realtime_position_manager_interval_seconds
+            )
+        )
+        render_waiting_dashboard(
+            remaining_seconds,
+            interactive=interactive,
+            status_callback=status_callback
+        )
 
     while True:
 
@@ -1117,13 +1252,7 @@ def wait_for_next_trading_cycle(
             active_reference_symbol,
             timeframe=get_strategy_cycle_timeframe(),
             timeframe_label=cycle_timeframe_label,
-            render_callback=lambda remaining_seconds: (
-                render_waiting_dashboard(
-                    remaining_seconds,
-                    interactive=interactive,
-                    status_callback=status_callback
-                )
-            ),
+            render_callback=render_waiting_cycle,
             interrupt_condition=lambda: (
                 get_trading_pause_reason() is not None
                 or _should_stop(stop_event)

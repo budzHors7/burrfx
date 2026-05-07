@@ -53,6 +53,31 @@ python -m trading.desktop_bridge journal
 python -m unittest tests.test_desktop_bridge
 ```
 
+## Packaged Desktop Build
+
+The release build bundles the Python trading/server runtime as a Tauri
+sidecar. End users do not need Python, Bun, Rust, or CLI commands after
+installing the desktop app, but they still need MetaTrader 5 installed and
+broker terminal paths configured.
+
+From `desktop-app/`:
+
+```powershell
+bun run build:desktop
+```
+
+That command builds `src-tauri/binaries/burrfx-runtime-x86_64-pc-windows-msvc.exe`
+with PyInstaller, then runs `tauri build`. The generated sidecar is ignored by
+git and can be regenerated with:
+
+```powershell
+bun run build:sidecar
+```
+
+Packaged runtime state is created under the app data folder on first launch:
+settings, `logs/`, `logs/trade_journal.csv`, `data/`, and `results/` live there
+instead of inside the installed application directory.
+
 If Rust is not on `PATH`, use the installed user toolchain directly:
 
 ```powershell

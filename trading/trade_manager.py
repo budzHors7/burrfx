@@ -17,12 +17,31 @@ from trading.debug_logger import (
 )
 from trading.journal import log_trade
 from trading.pivot_points import get_daily_pivots
+from trading.broker_runtime import get_active_broker
 from trading.trading_settings import (
     get_trading_settings
 )
 
 
 DERIV_TIGHT_SL_ATR_MULTIPLIER = 0.50
+DERIV_M1_EXIT_STOCHASTIC_BARS = 80
+DERIV_M1_EXIT_STOCHASTIC_STRATEGY = {
+    "id": "stochastic_oscillator",
+    "name": "Stochastic Oscillator",
+    "comment_code": "STO",
+    "timeframe": "M1",
+    "recommended_timeframes": [
+        "M1"
+    ],
+    "k_period": 5,
+    "d_period": 3,
+    "slowing": 3,
+    "upper_level": 75,
+    "lower_level": 25,
+    "price_field": "low_high",
+    "method": "simple",
+    "enforce_deriv_symbol_signal": False
+}
 
 
 # ===================================
@@ -200,6 +219,18 @@ def _trade_entry_is_allowed(
             "bot_position_count": 0
         }
 
+    symbol_positions = [
+        position
+        for position in bot_positions
+        if getattr(position, "symbol", None) == symbol
+    ]
+
+    if not symbol_positions:
+        return True, {
+            "reason": "new_symbol_signal",
+            "bot_position_count": len(bot_positions)
+        }
+
     account = mt5.account_info()
 
     if account is None:
@@ -250,21 +281,6 @@ def _trade_entry_is_allowed(
             "required_profit": required_profit,
             "equity": equity,
             "safe_floating_profit_percent": safe_profit_percent
-        }
-
-    symbol_positions = [
-        position
-        for position in bot_positions
-        if getattr(position, "symbol", None) == symbol
-    ]
-
-    if not symbol_positions:
-        return True, {
-            "reason": "safe_profit_new_symbol",
-            "bot_position_count": len(bot_positions),
-            "bot_floating_profit": bot_floating_profit,
-            "required_profit": required_profit,
-            "equity": equity
         }
 
     symbol_position_types = [
@@ -418,28 +434,6 @@ def _build_initial_stop_loss(
         )
         return selected_stop
 
-    pivot_stop = _build_deriv_pivot_side_stop(
-        symbol,
-        order_type,
-        price,
-        min_stop_gap,
-        digits
-    )
-
-    if pivot_stop is not None:
-        log_event(
-            "deriv_initial_stop_selected",
-            symbol=symbol,
-            order_type=order_type,
-            reason="pivot_side_stop",
-            price=price,
-            atr=atr,
-            sl=pivot_stop,
-            attempted_tight_sl=tight_stop,
-            min_stop_gap=min_stop_gap
-        )
-        return pivot_stop
-
     fallback_stop = _clamp_stop_loss(
         order_type,
         atr_stop,
@@ -452,7 +446,7 @@ def _build_initial_stop_loss(
         level="warning",
         symbol=symbol,
         order_type=order_type,
-        reason="atr_stop_clamped_after_pivot_unavailable",
+        reason="atr_stop_clamped_after_tight_stop_unsafe",
         price=price,
         atr=atr,
         sl=fallback_stop,
@@ -600,6 +594,16 @@ def _uses_deriv_tight_initial_stop(symbol):
     )
 
 
+def _uses_deriv_pivot_take_profit():
+
+    active_broker = get_active_broker()
+
+    return (
+        active_broker is not None
+        and active_broker.get("id") == "deriv"
+    )
+
+
 def _normalized_symbol_key(symbol):
 
     return "".join(
@@ -642,8 +646,16 @@ def execute_trade_batch(
     settings = _get_effective_trading_settings(
         settings_overrides
     )
+    max_positions_per_symbol = _bounded_trade_count(
+        settings.get(
+            "max_positions_per_symbol",
+            5
+        ),
+        maximum=25
+    )
     requested_count = _bounded_trade_count(
-        trade_count
+        trade_count,
+        maximum=max_positions_per_symbol
     )
     batch_id = _build_trade_batch_id(
         symbol,
@@ -730,12 +742,6 @@ def execute_trade_batch(
         )
         return []
 
-    max_positions_per_symbol = int(
-        settings.get(
-            "max_positions_per_symbol",
-            requested_count
-        )
-    )
     remaining_slots = max(
         max_positions_per_symbol
         - symbol_position_count,
@@ -776,20 +782,33 @@ def execute_trade_batch(
     tickets = []
 
     for index in range(1, orders_to_send + 1):
-        ticket = execute_trade(
-            symbol,
-            order_type,
-            lot_size,
-            price,
-            atr,
-            strategy_names=strategy_names,
-            strategy_codes=strategy_codes,
-            settings_overrides=settings_overrides,
-            skip_entry_policy=True,
-            batch_id=batch_id,
-            batch_index=index,
-            batch_size=orders_to_send
-        )
+        try:
+            ticket = execute_trade(
+                symbol,
+                order_type,
+                lot_size,
+                price,
+                atr,
+                strategy_names=strategy_names,
+                strategy_codes=strategy_codes,
+                settings_overrides=settings_overrides,
+                skip_entry_policy=True,
+                batch_id=batch_id,
+                batch_index=index,
+                batch_size=orders_to_send
+            )
+        except Exception as exc:
+            ticket = None
+            log_event(
+                "execute_trade_batch_order_failed",
+                level="error",
+                symbol=symbol,
+                profile=settings["id"],
+                batch_id=batch_id,
+                batch_index=index,
+                batch_size=orders_to_send,
+                error=str(exc)
+            )
 
         if ticket is not None:
             tickets.append(ticket)
@@ -918,8 +937,12 @@ def execute_trade(
         settings
     )
     tp = 0.0
+    use_pivot_take_profit = (
+        settings["use_take_profit"]
+        or _uses_deriv_pivot_take_profit()
+    )
 
-    if settings["use_take_profit"]:
+    if use_pivot_take_profit:
         pivots = get_daily_pivots(symbol)
 
         if pivots is None:
@@ -1143,18 +1166,25 @@ def execute_trade(
     return result.order
 
 
-def _bounded_trade_count(value):
+def _bounded_trade_count(value, maximum=5):
 
     try:
         normalized = int(value)
     except (TypeError, ValueError):
         normalized = 1
 
+    try:
+        maximum = int(maximum)
+    except (TypeError, ValueError):
+        maximum = 5
+
+    maximum = max(1, maximum)
+
     return max(
         1,
         min(
             normalized,
-            5
+            maximum
         )
     )
 
@@ -1238,12 +1268,20 @@ def trail_positions(
 ):
 
     settings = get_trading_settings()
-    use_take_profit = settings[
+    use_profile_take_profit = settings[
         "use_take_profit"
     ]
+    uses_deriv_pivot_take_profit = (
+        _uses_deriv_pivot_take_profit()
+    )
+    use_take_profit = (
+        use_profile_take_profit
+        or uses_deriv_pivot_take_profit
+    )
     extend_take_profit = (
         settings["extend_take_profit"]
-        and use_take_profit
+        and use_profile_take_profit
+        and not uses_deriv_pivot_take_profit
     )
     use_break_even = settings[
         "use_break_even"
@@ -1393,7 +1431,10 @@ def trail_positions(
         )
         position_use_take_profit = (
             use_take_profit
-            and not uses_previous_candle_half_trailing
+            and (
+                not uses_previous_candle_half_trailing
+                or uses_deriv_pivot_take_profit
+            )
         )
         position_extend_take_profit = (
             extend_take_profit
@@ -1821,6 +1862,313 @@ def _previous_candle_half_can_be_stop(
     return previous_candle_half >= (
         current_price + min_stop_gap
     )
+
+
+# ===================================
+# DERIV M1 EXIT MANAGEMENT
+# ===================================
+
+def close_deriv_positions_on_m1_exit_signal(symbol):
+
+    target_position_type, exit_signal = (
+        _get_deriv_m1_exit_position_type(symbol)
+    )
+
+    if target_position_type is None:
+        return 0
+
+    m1_signal = _get_deriv_m1_stochastic_exit_signal(symbol)
+
+    if m1_signal != exit_signal:
+        log_event(
+            "deriv_m1_exit_skipped",
+            symbol=symbol,
+            reason="exit_signal_not_active",
+            expected_signal=exit_signal,
+            signal=m1_signal
+        )
+        return 0
+
+    positions = mt5.positions_get(symbol=symbol)
+
+    if positions is None:
+        log_mt5_error(
+            "deriv_m1_exit_positions_failed",
+            symbol=symbol
+        )
+        return 0
+
+    closed_count = 0
+
+    for position in positions:
+        if not _is_bot_position(position):
+            continue
+
+        if _get_position_type(position) != target_position_type:
+            continue
+
+        if _close_position(
+            position,
+            reason="deriv_m1_stochastic_exit"
+        ):
+            closed_count += 1
+
+    if closed_count:
+        log_event(
+            "deriv_m1_exit_positions_closed",
+            symbol=symbol,
+            position_type=target_position_type,
+            signal=m1_signal,
+            closed_count=closed_count
+        )
+
+    return closed_count
+
+
+def _get_deriv_m1_stochastic_exit_signal(symbol):
+
+    rates = mt5.copy_rates_from_pos(
+        symbol,
+        mt5.TIMEFRAME_M1,
+        0,
+        DERIV_M1_EXIT_STOCHASTIC_BARS
+    )
+
+    if rates is None or len(rates) == 0:
+        log_mt5_error(
+            "deriv_m1_exit_rates_unavailable",
+            symbol=symbol,
+            timeframe="M1"
+        )
+        return None
+
+    strategy = DERIV_M1_EXIT_STOCHASTIC_STRATEGY
+    k_period = int(strategy["k_period"])
+    d_period = int(strategy["d_period"])
+    slowing = int(strategy["slowing"])
+    upper_level = float(strategy["upper_level"])
+    lower_level = float(strategy["lower_level"])
+    minimum_bars = (
+        k_period
+        + slowing
+        + d_period
+        - 1
+    )
+
+    df = pd.DataFrame(rates)
+
+    if len(df) < minimum_bars:
+        log_event(
+            "deriv_m1_exit_skipped",
+            level="warning",
+            symbol=symbol,
+            reason="insufficient_stochastic_bars",
+            timeframe="M1",
+            bars=len(df),
+            minimum_bars=minimum_bars
+        )
+        return None
+
+    from trading.strategy_engine import (
+        calculate_stochastic_oscillator
+    )
+
+    working_df = calculate_stochastic_oscillator(
+        df.copy(),
+        k_period,
+        d_period,
+        slowing
+    )
+    current = working_df.iloc[-1]
+    current_main = current["stochastic_main"]
+    current_signal = current["stochastic_signal"]
+
+    if (
+        pd.isna(current_main)
+        or pd.isna(current_signal)
+    ):
+        log_event(
+            "deriv_m1_exit_skipped",
+            level="warning",
+            symbol=symbol,
+            reason="stochastic_values_not_ready",
+            timeframe="M1",
+            main=None if pd.isna(current_main) else float(current_main),
+            signal=(
+                None
+                if pd.isna(current_signal)
+                else float(current_signal)
+            )
+        )
+        return None
+
+    current_main = float(current_main)
+    current_signal = float(current_signal)
+    exit_signal = None
+    decision_reason = "outside_exit_zones"
+
+    if (
+        current_main > upper_level
+        and current_signal > upper_level
+    ):
+        exit_signal = "SELL"
+        decision_reason = "main_and_signal_above_upper_level"
+    elif (
+        current_main < lower_level
+        and current_signal < lower_level
+    ):
+        exit_signal = "BUY"
+        decision_reason = "main_and_signal_below_lower_level"
+
+    log_event(
+        "deriv_m1_exit_stochastic_checked",
+        symbol=symbol,
+        timeframe="M1",
+        main=current_main,
+        signal=current_signal,
+        upper_level=upper_level,
+        lower_level=lower_level,
+        exit_signal=exit_signal,
+        decision_reason=decision_reason
+    )
+
+    return exit_signal
+
+
+def _get_deriv_m1_exit_position_type(symbol):
+
+    symbol_key = _normalized_symbol_key(symbol)
+
+    if symbol_key in (
+        "CRASH1000",
+        "CRASH1000INDEX"
+    ):
+        return "BUY", "SELL"
+
+    if symbol_key in (
+        "BOOM1000",
+        "BOOM1000INDEX"
+    ):
+        return "SELL", "BUY"
+
+    return None, None
+
+
+def _close_position(
+    position,
+    reason="position_close"
+):
+
+    position_type = _get_position_type(position)
+
+    if position_type is None:
+        log_event(
+            "close_position_skipped",
+            level="warning",
+            ticket=getattr(position, "ticket", None),
+            symbol=getattr(position, "symbol", None),
+            reason="unsupported_position_type",
+            position_type=getattr(position, "type", None)
+        )
+        return False
+
+    tick = mt5.symbol_info_tick(position.symbol)
+
+    if tick is None:
+        log_mt5_error(
+            "close_position_failed",
+            ticket=position.ticket,
+            symbol=position.symbol,
+            reason="tick_unavailable"
+        )
+        return False
+
+    volume = float(
+        getattr(position, "volume", 0.0)
+        or 0.0
+    )
+
+    if volume <= 0:
+        log_event(
+            "close_position_skipped",
+            level="warning",
+            ticket=position.ticket,
+            symbol=position.symbol,
+            reason="invalid_volume",
+            volume=volume
+        )
+        return False
+
+    if position_type == "BUY":
+        close_order_type = mt5.ORDER_TYPE_SELL
+        price = tick.bid
+    else:
+        close_order_type = mt5.ORDER_TYPE_BUY
+        price = tick.ask
+
+    request = {
+        "action": mt5.TRADE_ACTION_DEAL,
+        "symbol": position.symbol,
+        "position": position.ticket,
+        "volume": volume,
+        "type": close_order_type,
+        "price": price,
+        "deviation": ORDER_DEVIATION,
+        "magic": MAGIC_NUMBER,
+        "comment": "BURRFX EXIT",
+        "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": mt5.ORDER_FILLING_FOK
+    }
+
+    log_event(
+        "close_position_request",
+        ticket=position.ticket,
+        symbol=position.symbol,
+        position_type=position_type,
+        reason=reason,
+        request=request
+    )
+
+    result = mt5.order_send(request)
+
+    if result is None:
+        log_mt5_error(
+            "close_position_failed",
+            ticket=position.ticket,
+            symbol=position.symbol,
+            reason=reason
+        )
+        return False
+
+    if result.retcode != mt5.TRADE_RETCODE_DONE:
+        log_event(
+            "close_position_rejected",
+            level="error",
+            ticket=position.ticket,
+            symbol=position.symbol,
+            reason=reason,
+            result=result
+        )
+        log_mt5_error(
+            "close_position_last_error",
+            ticket=position.ticket,
+            symbol=position.symbol
+        )
+        return False
+
+    print(
+        f"Position closed: {position.ticket}"
+    )
+
+    log_event(
+        "close_position_success",
+        ticket=position.ticket,
+        symbol=position.symbol,
+        reason=reason,
+        result=result
+    )
+
+    return True
 
 
 # ===================================

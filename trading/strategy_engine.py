@@ -276,6 +276,16 @@ def get_strategy_catalog():
             int(strategy.get("bars", defaults["bars"])),
             ATR_PERIOD + 5
         )
+        max_positions_per_symbol = _bounded_int(
+            strategy.get(
+                "max_positions_per_symbol",
+                defaults.get("max_positions_per_symbol", 5)
+            ),
+            default=5,
+            minimum=1,
+            maximum=25
+        )
+        strategy["max_positions_per_symbol"] = max_positions_per_symbol
         strategy["trades_per_signal"] = _bounded_int(
             strategy.get(
                 "trades_per_signal",
@@ -283,7 +293,7 @@ def get_strategy_catalog():
             ),
             default=1,
             minimum=1,
-            maximum=5
+            maximum=max_positions_per_symbol
         )
 
         catalog.append(strategy)
@@ -525,7 +535,7 @@ def evaluate_strategy_signal(
             strategy.get("trades_per_signal"),
             default=1,
             minimum=1,
-            maximum=5
+            maximum=_strategy_trade_count_cap(strategy)
         ),
         "execution_overrides": _build_execution_overrides(
             strategy
@@ -924,14 +934,23 @@ def check_stochastic_oscillator(
             )
         )
     }
+    enforce_deriv_symbol_signal = bool(
+        strategy.get(
+            "enforce_deriv_symbol_signal",
+            True
+        )
+    )
 
     if (
         sell_cross
         and current_overbought
     ):
-        if not _deriv_stochastic_signal_allowed(
-            symbol,
-            "SELL"
+        if (
+            enforce_deriv_symbol_signal
+            and not _deriv_stochastic_signal_allowed(
+                symbol,
+                "SELL"
+            )
         ):
             _log_deriv_stochastic_diagnostic(
                 symbol,
@@ -967,9 +986,12 @@ def check_stochastic_oscillator(
         buy_cross
         and current_oversold
     ):
-        if not _deriv_stochastic_signal_allowed(
-            symbol,
-            "BUY"
+        if (
+            enforce_deriv_symbol_signal
+            and not _deriv_stochastic_signal_allowed(
+                symbol,
+                "BUY"
+            )
         ):
             _log_deriv_stochastic_diagnostic(
                 symbol,
@@ -1703,6 +1725,16 @@ def _build_execution_overrides(strategy):
         )
 
     return overrides
+
+
+def _strategy_trade_count_cap(strategy):
+
+    return _bounded_int(
+        strategy.get("max_positions_per_symbol"),
+        default=5,
+        minimum=1,
+        maximum=25
+    )
 
 
 def _deriv_stochastic_signal_allowed(

@@ -2,6 +2,7 @@ import json
 import os
 
 from config import (
+    BROKER_SETTINGS_FILE,
     DAILY_TARGET,
     ENABLE_DAILY_LOCK,
     MAX_DAILY_LOSS
@@ -16,15 +17,7 @@ from trading.strategy_settings import (
 from utils import clear_screen, pause
 
 
-PROJECT_ROOT = os.path.dirname(
-    os.path.dirname(
-        os.path.abspath(__file__)
-    )
-)
-SETTINGS_FILE = os.path.join(
-    PROJECT_ROOT,
-    "broker_settings.json"
-)
+SETTINGS_FILE = BROKER_SETTINGS_FILE
 DEFAULT_DAILY_LIMITS = {
     "enabled": bool(ENABLE_DAILY_LOCK),
     "target": float(DAILY_TARGET),
@@ -142,6 +135,11 @@ def load_broker_settings():
 
 
 def save_broker_settings(settings):
+
+    os.makedirs(
+        os.path.dirname(SETTINGS_FILE),
+        exist_ok=True
+    )
 
     with open(
         SETTINGS_FILE,
@@ -285,6 +283,67 @@ def get_broker_daily_limits(broker=None):
     return normalize_daily_limits(
         broker.get("daily_limits")
     )
+
+
+def set_broker_strategy_trade_count(
+    broker_id,
+    strategy_id,
+    trade_count
+):
+
+    settings = load_broker_settings()
+    brokers = settings.setdefault(
+        "brokers",
+        {}
+    )
+
+    if broker_id not in brokers:
+        raise ValueError(
+            f"Unknown broker: {broker_id}"
+        )
+
+    broker = brokers[broker_id]
+    strategies = broker.setdefault(
+        "strategy_settings",
+        {}
+    )
+
+    if strategy_id not in strategies:
+        raise ValueError(
+            f"Unknown broker strategy: {strategy_id}"
+        )
+
+    strategy = strategies[strategy_id]
+
+    if not isinstance(strategy, dict):
+        raise ValueError(
+            f"Broker strategy {strategy_id} must be an object."
+        )
+
+    max_positions = _normalize_strategy_int(
+        strategy.get("max_positions_per_symbol"),
+        default=5,
+        minimum=1,
+        maximum=25
+    )
+    strategy["max_positions_per_symbol"] = max_positions
+    strategy["trades_per_signal"] = _normalize_strategy_int(
+        trade_count,
+        default=strategy.get("trades_per_signal", 1),
+        minimum=1,
+        maximum=max_positions
+    )
+    save_broker_settings(settings)
+
+    log_event(
+        "broker_strategy_trade_count_updated",
+        broker_id=broker_id,
+        strategy_id=strategy_id,
+        trades_per_signal=strategy["trades_per_signal"],
+        max_positions_per_symbol=max_positions
+    )
+
+    return strategy.copy()
 
 
 def normalize_daily_limits(daily_limits=None):
@@ -469,6 +528,7 @@ def broker_settings_menu():
 
         print("\nSelect broker number to toggle active/off.")
         print("D. Edit broker daily target/loss")
+        print("T. Edit broker strategy trade count")
         print("V. Validate active brokers")
         print("B. Back to main menu")
 
@@ -493,6 +553,10 @@ def broker_settings_menu():
 
         if choice == "D":
             _daily_limits_menu(brokers)
+            continue
+
+        if choice == "T":
+            _strategy_trade_count_menu(brokers)
             continue
 
         if not choice.isdigit():
@@ -648,6 +712,118 @@ def _daily_limits_menu(brokers):
     pause()
 
 
+def _strategy_trade_count_menu(brokers):
+
+    strategy_rows = []
+
+    for broker in brokers:
+        strategies = broker.get(
+            "strategy_settings",
+            {}
+        )
+
+        if not isinstance(strategies, dict):
+            continue
+
+        for strategy_id, strategy in strategies.items():
+            if not isinstance(strategy, dict):
+                continue
+
+            max_positions = _normalize_strategy_int(
+                strategy.get("max_positions_per_symbol"),
+                default=5,
+                minimum=1,
+                maximum=25
+            )
+            current_count = _normalize_strategy_int(
+                strategy.get("trades_per_signal"),
+                default=1,
+                minimum=1,
+                maximum=max_positions
+            )
+            strategy_rows.append(
+                (
+                    broker,
+                    strategy_id,
+                    current_count,
+                    max_positions
+                )
+            )
+
+    if not strategy_rows:
+        print("\nNo broker strategy trade-count options found.")
+        pause()
+        return
+
+    print("\nBROKER STRATEGY TRADE COUNT")
+    print("===========================\n")
+
+    for index, (
+        broker,
+        strategy_id,
+        current_count,
+        max_positions
+    ) in enumerate(strategy_rows, start=1):
+        print(
+            f"{index}. {broker['label']} - "
+            f"{_format_strategy_name(strategy_id)}: "
+            f"{current_count} trades "
+            f"(max {max_positions})"
+        )
+
+    choice = input(
+        "\nSelect strategy number or B to go back: "
+    ).strip().upper()
+
+    if choice == "B":
+        return
+
+    if not choice.isdigit():
+        print("\nInvalid selection.")
+        pause()
+        return
+
+    index = int(choice)
+
+    if index < 1 or index > len(strategy_rows):
+        print("\nInvalid selection.")
+        pause()
+        return
+
+    (
+        broker,
+        strategy_id,
+        current_count,
+        max_positions
+    ) = strategy_rows[index - 1]
+    count_input = input(
+        "Trades per signal "
+        f"[current {current_count}, max {max_positions}]: "
+    ).strip()
+
+    if not count_input:
+        return
+
+    try:
+        saved_strategy = set_broker_strategy_trade_count(
+            broker["id"],
+            strategy_id,
+            count_input
+        )
+    except ValueError as exc:
+        print(f"\n{exc}")
+        pause()
+        return
+
+    print(
+        f"\n{broker['label']} "
+        f"{_format_strategy_name(strategy_id)} saved: "
+        f"{saved_strategy['trades_per_signal']} trades "
+        f"(max {saved_strategy['max_positions_per_symbol']})."
+    )
+    pause()
+
+
 def _normalize_settings(settings):
 
     normalized = _clone_settings(DEFAULT_SETTINGS)
@@ -782,3 +958,32 @@ def _normalize_daily_loss(value):
         )
 
     return -abs(numeric_value)
+
+
+def _normalize_strategy_int(
+    value,
+    default,
+    minimum,
+    maximum
+):
+
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        normalized = int(default)
+
+    return max(
+        int(minimum),
+        min(
+            normalized,
+            int(maximum)
+        )
+    )
+
+
+def _format_strategy_name(strategy_id):
+
+    return str(strategy_id).replace(
+        "_",
+        " "
+    ).title()

@@ -69,6 +69,18 @@ bun install
 bun run tauri dev
 ```
 
+Packaged desktop build:
+
+```powershell
+cd desktop-app
+bun run build:desktop
+```
+
+The packaged build creates a PyInstaller `burrfx-runtime.exe` sidecar and
+bundles it with Tauri so installed users do not need Python or the repo checkout.
+Mutable settings, journals, logs, data, and results are created in the user's app
+data folder on first launch.
+
 Useful checks:
 
 ```powershell

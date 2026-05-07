@@ -1,0 +1,14 @@
+{
+  "bundle": {
+    "targets": ["nsis"],
+    "externalBin": [
+      "binaries/burrfx-runtime"
+    ],
+    "resources": {
+      "../../broker_settings.json": "seeds/broker_settings.json",
+      "../../strategy_settings.json": "seeds/strategy_settings.json",
+      "../../trading_settings.json": "seeds/trading_settings.json",
+      "../../server/.env.example": "seeds/server/.env.example"
+    }
+  }
+}

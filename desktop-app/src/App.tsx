@@ -98,8 +98,15 @@ function App() {
 
   useEffect(() => {
     let mounted = true;
+    let loading = false;
 
     async function load() {
+      if (loading) {
+        return;
+      }
+
+      loading = true;
+
       try {
         const nextStatus = await getAppStatus();
 
@@ -113,6 +120,8 @@ function App() {
             text: normalizeError(error),
           });
         }
+      } finally {
+        loading = false;
       }
     }
 
@@ -353,6 +362,11 @@ function App() {
           <div aria-label="BurrFx" className="brand-wordmark">
             Burr<span>Fx</span>
           </div>
+          {status && (
+            <span className="runtime-badge" title={status.runtime_root}>
+              {status.packaged_runtime ? "Bundled Runtime" : "Python Runtime"}
+            </span>
+          )}
         </div>
 
         <div className="top-actions">
@@ -424,6 +438,7 @@ function App() {
           onModeChange={setLogViewMode}
           onRefresh={refreshLogs}
           refreshDisabled={logsPending}
+          runtimeRoot={status?.runtime_root ?? null}
           runtimeLogs={runtimeLogs}
         />
       )}
@@ -974,9 +989,14 @@ type SettingsDraft = {
   strategies: Record<string, boolean>;
   brokers: Record<string, boolean>;
   brokerConfigs: Record<string, BrokerConfigDraft>;
-  brokerStrategies: Record<string, Record<string, boolean>>;
+  brokerStrategies: Record<string, Record<string, BrokerStrategyDraft>>;
   brokerDailyLimits: Record<string, BrokerDailyLimitsDraft>;
   newBroker: NewBrokerDraft;
+};
+
+type BrokerStrategyDraft = {
+  enabled: boolean;
+  tradeCount: string;
 };
 
 type BrokerDailyLimitsDraft = {
@@ -1169,7 +1189,7 @@ function SettingsModal({
   function updateBrokerStrategy(
     brokerId: string,
     strategyId: string,
-    enabled: boolean,
+    updates: Partial<BrokerStrategyDraft>,
   ) {
     setDraft((current) =>
       current
@@ -1179,7 +1199,13 @@ function SettingsModal({
               ...current.brokerStrategies,
               [brokerId]: {
                 ...(current.brokerStrategies[brokerId] ?? {}),
-                [strategyId]: enabled,
+                [strategyId]: {
+                  ...(current.brokerStrategies[brokerId]?.[strategyId] ?? {
+                    enabled: false,
+                    tradeCount: "1",
+                  }),
+                  ...updates,
+                },
               },
             },
           }
@@ -1395,8 +1421,8 @@ function SettingsModal({
                     onConfigChange={(updates) =>
                       updateBrokerConfig(broker.id, updates)
                     }
-                    onStrategyChange={(strategyId, enabled) =>
-                      updateBrokerStrategy(broker.id, strategyId, enabled)
+                    onStrategyChange={(strategyId, updates) =>
+                      updateBrokerStrategy(broker.id, strategyId, updates)
                     }
                     onDailyLimitsChange={(updates) =>
                       updateBrokerDailyLimits(broker.id, updates)
@@ -1489,10 +1515,13 @@ function BrokerSettingsCard({
   disabled: boolean;
   brokerConfig: BrokerConfigDraft;
   dailyLimits: BrokerDailyLimitsDraft;
-  brokerStrategies: Record<string, boolean>;
+  brokerStrategies: Record<string, BrokerStrategyDraft>;
   onBrokerChange: (enabled: boolean) => void;
   onConfigChange: (updates: Partial<BrokerConfigDraft>) => void;
-  onStrategyChange: (strategyId: string, enabled: boolean) => void;
+  onStrategyChange: (
+    strategyId: string,
+    updates: Partial<BrokerStrategyDraft>,
+  ) => void;
   onDailyLimitsChange: (updates: Partial<BrokerDailyLimitsDraft>) => void;
 }) {
   const brokerInputId = `broker-${broker.id}`;
@@ -1769,9 +1798,12 @@ function BrokerStrategyOptions({
   onStrategyChange,
 }: {
   broker: BrokerSummary;
-  brokerStrategies: Record<string, boolean>;
+  brokerStrategies: Record<string, BrokerStrategyDraft>;
   disabled: boolean;
-  onStrategyChange: (strategyId: string, enabled: boolean) => void;
+  onStrategyChange: (
+    strategyId: string,
+    updates: Partial<BrokerStrategyDraft>,
+  ) => void;
 }) {
   if (!broker.allowed_strategies.length) {
     return (
@@ -1788,23 +1820,49 @@ function BrokerStrategyOptions({
     >
       <p className="settings-subheading">Allowed strategies</p>
       {broker.allowed_strategies.map((strategy) => (
-        <label className="broker-strategy-option" key={strategy.id}>
-          <input
-            checked={brokerStrategies[strategy.id] ?? strategy.enabled}
-            disabled={disabled}
-            onChange={(event) =>
-              onStrategyChange(strategy.id, event.target.checked)
-            }
-            type="checkbox"
-          />
-          <span>
-            <strong>{strategy.label}</strong>
-            <small>
-              {strategy.timeframe} |{" "}
-              {strategy.recommended_timeframes.join(", ") || "N/A"}
-            </small>
-          </span>
-        </label>
+        <div className="broker-strategy-row" key={strategy.id}>
+          <label className="broker-strategy-option">
+            <input
+              checked={
+                brokerStrategies[strategy.id]?.enabled ?? strategy.enabled
+              }
+              disabled={disabled}
+              onChange={(event) =>
+                onStrategyChange(strategy.id, {
+                  enabled: event.target.checked,
+                })
+              }
+              type="checkbox"
+            />
+            <span>
+              <strong>{strategy.label}</strong>
+              <small>
+                {strategy.timeframe} |{" "}
+                {strategy.recommended_timeframes.join(", ") || "N/A"}
+              </small>
+            </span>
+          </label>
+          <label className="broker-strategy-count">
+            <span>Trades</span>
+            <input
+              disabled={disabled}
+              inputMode="numeric"
+              max={strategy.max_positions_per_symbol}
+              min={1}
+              onChange={(event) =>
+                onStrategyChange(strategy.id, {
+                  tradeCount: event.target.value,
+                })
+              }
+              type="number"
+              value={
+                brokerStrategies[strategy.id]?.tradeCount
+                ?? String(strategy.trades_per_signal)
+              }
+            />
+            <small>Max {strategy.max_positions_per_symbol}</small>
+          </label>
+        </div>
       ))}
     </div>
   );
@@ -1866,7 +1924,10 @@ function createSettingsDraft(settings: BotSettings): SettingsDraft {
         Object.fromEntries(
           broker.allowed_strategies.map((strategy) => [
             strategy.id,
-            strategy.enabled,
+            {
+              enabled: strategy.enabled,
+              tradeCount: String(strategy.trades_per_signal),
+            },
           ]),
         ),
       ]),
@@ -1891,7 +1952,7 @@ function buildSettingsPayload(draft: SettingsDraft): BotSettingsPayload {
       : { strategies: draft.strategies }),
     brokers: draft.brokers,
     broker_configs: buildBrokerConfigsPayload(draft.brokerConfigs),
-    broker_strategies: draft.brokerStrategies,
+    broker_strategies: buildBrokerStrategiesPayload(draft.brokerStrategies),
     broker_daily_limits: buildBrokerDailyLimitsPayload(
       draft.brokerDailyLimits,
     ),
@@ -1941,6 +2002,33 @@ function buildBrokerConfigsPayload(
         expected_login: config.expectedLogin.trim() || null,
         expected_server: config.expectedServer.trim(),
       },
+    ]),
+  );
+}
+
+function buildBrokerStrategiesPayload(
+  brokerStrategies: Record<string, Record<string, BrokerStrategyDraft>>,
+): NonNullable<BotSettingsPayload["broker_strategies"]> {
+  return Object.fromEntries(
+    Object.entries(brokerStrategies).map(([brokerId, strategies]) => [
+      brokerId,
+      Object.fromEntries(
+        Object.entries(strategies).map(([strategyId, strategy]) => {
+          const tradeCount = Number(strategy.tradeCount);
+
+          if (!Number.isFinite(tradeCount) || tradeCount < 1) {
+            throw new Error("Trades per signal must be at least one.");
+          }
+
+          return [
+            strategyId,
+            {
+              enabled: strategy.enabled,
+              trades_per_signal: Math.floor(tradeCount),
+            },
+          ];
+        }),
+      ),
     ]),
   );
 }
@@ -2263,6 +2351,7 @@ function LogsModal({
   fileLogs,
   mode,
   refreshDisabled,
+  runtimeRoot,
   runtimeLogs,
   onCategoryChange,
   onClose,
@@ -2275,6 +2364,7 @@ function LogsModal({
   fileLogs: AppLogEntry[];
   mode: LogViewMode;
   refreshDisabled: boolean;
+  runtimeRoot: string | null;
   runtimeLogs: RuntimeLog[];
   onCategoryChange: (category: string) => void;
   onClose: () => void;
@@ -2316,6 +2406,7 @@ function LogsModal({
             onModeChange={onModeChange}
             onRefresh={onRefresh}
             refreshDisabled={refreshDisabled}
+            runtimeRoot={runtimeRoot}
             runtimeLogs={runtimeLogs}
           />
         </div>
@@ -2332,6 +2423,7 @@ function LogsViewer({
   large = false,
   mode,
   refreshDisabled,
+  runtimeRoot,
   runtimeLogs,
   onCategoryChange,
   onModeChange,
@@ -2345,6 +2437,7 @@ function LogsViewer({
   large?: boolean;
   mode: LogViewMode;
   refreshDisabled: boolean;
+  runtimeRoot: string | null;
   runtimeLogs: RuntimeLog[];
   onCategoryChange: (category: string) => void;
   onModeChange: (mode: LogViewMode) => void;
@@ -2423,6 +2516,14 @@ function LogsViewer({
 
       {mode === "files" && (
         <>
+          {(appLogs?.logs_root || runtimeRoot) && (
+            <div
+              className="runtime-path"
+              title={appLogs?.logs_root ?? runtimeRoot ?? ""}
+            >
+              {appLogs?.logs_root ?? runtimeRoot}
+            </div>
+          )}
           <LogFileStrip appLogs={appLogs} />
           <FileLogList logs={fileLogs} />
         </>

@@ -145,6 +145,8 @@ export type StrategyOption = {
   default_enabled: boolean;
   timeframe: string;
   recommended_timeframes: string[];
+  trades_per_signal: number;
+  max_positions_per_symbol: number;
 };
 
 export type BrokerDailyLimits = {
@@ -183,6 +185,8 @@ export type ServerSettings = {
 
 export type DesktopStatus = {
   project_root: string;
+  runtime_root: string;
+  packaged_runtime: boolean;
   generated_at: string;
   bridge_error: string | null;
   server_settings: ServerSettings | null;
@@ -235,9 +239,17 @@ export type BotSettingsPayload = {
   strategies?: Record<string, boolean>;
   brokers?: Record<string, boolean>;
   broker_configs?: Record<string, BrokerConfigPayload>;
-  broker_strategies?: Record<string, Record<string, boolean>>;
+  broker_strategies?: Record<
+    string,
+    Record<string, boolean | BrokerStrategyPayload>
+  >;
   broker_daily_limits?: Record<string, BrokerDailyLimits>;
   new_brokers?: NewBrokerPayload[];
+};
+
+export type BrokerStrategyPayload = {
+  enabled?: boolean;
+  trades_per_signal?: number;
 };
 
 export type BrokerConfigPayload = {
@@ -287,6 +299,8 @@ declare global {
 
 const mockStatus: DesktopStatus = {
   project_root: "C:\\Users\\Anda Hanise\\Desktop\\Projects\\BurrFx",
+  runtime_root: "C:\\Users\\Anda Hanise\\AppData\\Roaming\\com.haniseanda.desktop-app",
+  packaged_runtime: true,
   generated_at: nowStamp(),
   bridge_error: null,
   server_settings: {
@@ -418,6 +432,8 @@ let mockStrategies: BotStrategySummary[] = [
     default_enabled: true,
     timeframe: "M15",
     recommended_timeframes: ["M15", "M30", "H1"],
+    trades_per_signal: 1,
+    max_positions_per_symbol: 3,
   },
   {
     id: "trendline_price_action",
@@ -426,6 +442,8 @@ let mockStrategies: BotStrategySummary[] = [
     default_enabled: true,
     timeframe: "H1",
     recommended_timeframes: ["H1", "H4", "D1"],
+    trades_per_signal: 1,
+    max_positions_per_symbol: 3,
   },
   {
     id: "smc_liquidity_sweep",
@@ -434,6 +452,8 @@ let mockStrategies: BotStrategySummary[] = [
     default_enabled: false,
     timeframe: "M15",
     recommended_timeframes: ["M15", "M30", "H1"],
+    trades_per_signal: 1,
+    max_positions_per_symbol: 3,
   },
   {
     id: "high_impact_news",
@@ -442,6 +462,8 @@ let mockStrategies: BotStrategySummary[] = [
     default_enabled: false,
     timeframe: "M1",
     recommended_timeframes: ["M1", "M5"],
+    trades_per_signal: 1,
+    max_positions_per_symbol: 3,
   },
 ];
 
@@ -455,6 +477,8 @@ let mockBrokerStrategies: Record<string, BotStrategySummary[]> = {
       default_enabled: true,
       timeframe: "M5",
       recommended_timeframes: ["M5"],
+      trades_per_signal: 5,
+      max_positions_per_symbol: 25,
     },
   ],
 };
@@ -1007,9 +1031,10 @@ function applyMockSettings(payload: BotSettingsPayload): void {
         brokerId,
         strategies.map((strategy) => ({
           ...strategy,
-          enabled:
-            payload.broker_strategies?.[brokerId]?.[strategy.id]
-            ?? strategy.enabled,
+          ...normalizeMockBrokerStrategyUpdate(
+            payload.broker_strategies?.[brokerId]?.[strategy.id],
+            strategy,
+          ),
         })),
       ]),
     );
@@ -1028,6 +1053,34 @@ function cloneStrategy(strategy: BotStrategySummary): BotStrategySummary {
   return {
     ...strategy,
     recommended_timeframes: [...strategy.recommended_timeframes],
+  };
+}
+
+function normalizeMockBrokerStrategyUpdate(
+  update: boolean | BrokerStrategyPayload | undefined,
+  strategy: BotStrategySummary,
+): Partial<BotStrategySummary> {
+  if (update === undefined) {
+    return {};
+  }
+
+  if (typeof update === "boolean") {
+    return {
+      enabled: update,
+    };
+  }
+
+  const maxPositions = Math.max(1, strategy.max_positions_per_symbol);
+  const requestedTradeCount = Math.floor(
+    Number(update.trades_per_signal ?? strategy.trades_per_signal),
+  );
+
+  return {
+    ...(update.enabled === undefined ? {} : { enabled: Boolean(update.enabled) }),
+    trades_per_signal: Math.min(
+      Math.max(Number.isFinite(requestedTradeCount) ? requestedTradeCount : 1, 1),
+      maxPositions,
+    ),
   };
 }
 

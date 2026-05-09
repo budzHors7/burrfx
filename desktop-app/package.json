@@ -6,10 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "build:sidecar": "powershell -ExecutionPolicy Bypass -File ../scripts/build-python-sidecar.ps1",
-    "build:desktop": "bun run build:sidecar && bun run tauri build --config src-tauri/tauri.bundle.conf.json",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:sidecar": "powershell -File ../scripts/build-python-sidecar.ps1",
+    "build:desktop": "bun run build:sidecar && bun run tauri build --config src-tauri/tauri.bundle.conf.json",
+    "build:msstore": "bun run build:sidecar && bun run build:desktop --config src-tauri/tauri.microsoftstore.conf.json"
   },
   "dependencies": {
     "react": "^19.1.0",

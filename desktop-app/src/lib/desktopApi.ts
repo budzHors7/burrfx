@@ -147,7 +147,10 @@ export type StrategyOption = {
   recommended_timeframes: string[];
   trades_per_signal: number;
   max_positions_per_symbol: number;
+  trade_mode?: DerivTradeMode;
 };
+
+export type DerivTradeMode = "normal" | "spike" | "both";
 
 export type BrokerDailyLimits = {
   enabled: boolean;
@@ -250,6 +253,7 @@ export type BotSettingsPayload = {
 export type BrokerStrategyPayload = {
   enabled?: boolean;
   trades_per_signal?: number;
+  trade_mode?: DerivTradeMode;
 };
 
 export type BrokerConfigPayload = {
@@ -479,6 +483,7 @@ let mockBrokerStrategies: Record<string, BotStrategySummary[]> = {
       recommended_timeframes: ["M5"],
       trades_per_signal: 5,
       max_positions_per_symbol: 25,
+      trade_mode: "normal",
     },
   ],
 };
@@ -1077,11 +1082,22 @@ function normalizeMockBrokerStrategyUpdate(
 
   return {
     ...(update.enabled === undefined ? {} : { enabled: Boolean(update.enabled) }),
+    ...(update.trade_mode === undefined
+      ? {}
+      : { trade_mode: normalizeMockDerivTradeMode(update.trade_mode) }),
     trades_per_signal: Math.min(
       Math.max(Number.isFinite(requestedTradeCount) ? requestedTradeCount : 1, 1),
       maxPositions,
     ),
   };
+}
+
+function normalizeMockDerivTradeMode(value: string): DerivTradeMode {
+  if (value === "spike" || value === "both") {
+    return value;
+  }
+
+  return "normal";
 }
 
 function isTauri(): boolean {

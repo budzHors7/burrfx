@@ -1465,7 +1465,7 @@ class DerivM1ExitSignalTests(unittest.TestCase):
 
         return closed_count, sent_requests, copy_rate_calls
 
-    def test_crash_buy_positions_close_on_m1_sell_cross_above_75(self):
+    def test_crash_buy_positions_do_not_close_above_75_opening_zone(self):
         position = _bot_position(
             symbol="Crash 1000 Index",
             side="BUY",
@@ -1487,14 +1487,11 @@ class DerivM1ExitSignalTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual(closed_count, 1)
+        self.assertEqual(closed_count, 0)
         self.assertEqual(copy_rate_calls[0][1], 1)
-        self.assertEqual(requests[0]["position"], 777)
-        self.assertEqual(requests[0]["type"], 1)
-        self.assertEqual(requests[0]["price"], 5590.0)
-        self.assertEqual(requests[0]["volume"], 0.2)
+        self.assertEqual(requests, [])
 
-    def test_crash_buy_positions_close_when_m1_values_are_above_75_without_cross(self):
+    def test_crash_buy_positions_close_when_m1_values_are_below_25_without_cross(self):
         position = _bot_position(
             symbol="Crash 1000 Index",
             side="BUY",
@@ -1505,14 +1502,14 @@ class DerivM1ExitSignalTests(unittest.TestCase):
         closed_count, requests, _copy_rate_calls = (
             self._run_exit_check(
                 [position],
-                _stochastic_rates([100.0] * 25),
+                _stochastic_rates([0.0] * 25),
             )
         )
 
         self.assertEqual(closed_count, 1)
         self.assertEqual(requests[0]["position"], 778)
 
-    def test_boom_sell_positions_close_on_m1_buy_cross_below_25(self):
+    def test_boom_sell_positions_do_not_close_below_25_opening_zone(self):
         position = _bot_position(
             symbol="Boom 1000 Index",
             side="SELL",
@@ -1537,14 +1534,11 @@ class DerivM1ExitSignalTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual(closed_count, 1)
+        self.assertEqual(closed_count, 0)
         self.assertEqual(copy_rate_calls[0][1], 1)
-        self.assertEqual(requests[0]["position"], 888)
-        self.assertEqual(requests[0]["type"], 0)
-        self.assertEqual(requests[0]["price"], 14350.0)
-        self.assertEqual(requests[0]["volume"], 0.3)
+        self.assertEqual(requests, [])
 
-    def test_boom_sell_positions_close_when_m1_values_are_below_25_without_cross(self):
+    def test_boom_sell_positions_close_when_m1_values_are_above_75_without_cross(self):
         position = _bot_position(
             symbol="Boom 1000 Index",
             side="SELL",
@@ -1555,7 +1549,7 @@ class DerivM1ExitSignalTests(unittest.TestCase):
         closed_count, requests, _copy_rate_calls = (
             self._run_exit_check(
                 [position],
-                _stochastic_rates([0.0] * 25),
+                _stochastic_rates([100.0] * 25),
                 symbol="Boom 1000 Index",
                 bid=14349.0,
                 ask=14350.0,

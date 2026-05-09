@@ -4,6 +4,7 @@ import subprocess
 import sys
 
 from trading.broker_settings import (
+    get_broker_display_label,
     get_enabled_brokers,
     validate_broker_config
 )
@@ -132,11 +133,15 @@ def _build_wt_args(
 
 def _build_new_tab_args(broker):
 
-    title = f"{broker['label']} Bot"
+    title = _broker_tab_title(broker)
     command = _encode_powershell_command(
         "\n".join(
             [
                 "$ErrorActionPreference = 'Continue'",
+                (
+                    "$Host.UI.RawUI.WindowTitle = "
+                    f"'{_escape_ps(title)}'"
+                ),
                 f"Set-Location -LiteralPath '{_escape_ps(PROJECT_ROOT)}'",
                 "try {",
                 f"    & '{_escape_ps(sys.executable)}' "
@@ -154,6 +159,7 @@ def _build_new_tab_args(broker):
         "new-tab",
         "--title",
         title,
+        "--suppressApplicationTitle",
         "powershell.exe",
         "-NoLogo",
         "-NoProfile",
@@ -162,6 +168,11 @@ def _build_new_tab_args(broker):
         "-EncodedCommand",
         command
     ]
+
+
+def _broker_tab_title(broker):
+
+    return get_broker_display_label(broker)
 
 
 def _encode_powershell_command(command):

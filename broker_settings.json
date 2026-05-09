@@ -3,9 +3,9 @@
     "exness": {
       "enabled": false,
       "label": "Exness",
-      "terminal_path": "C:\\Program Files\\MetaTrader 5 EXNESS\\terminal64.exe",
-      "expected_login": 435325248,
-      "expected_server": "Exness-MT5Trial9",
+      "terminal_path": "",
+      "expected_login": null,
+      "expected_server": "",
       "trading_profile": "regular_risk",
       "daily_limits": {
         "enabled": true,
@@ -48,48 +48,7 @@
           "mt5": "XAUUSDm",
           "enabled": true
         }
-      ],
-      "strategy_settings": {
-        "ma_crossover": {
-          "enabled": true,
-          "timeframe": "M15",
-          "recommended_timeframes": [
-            "M15",
-            "M30",
-            "H1"
-          ],
-          "trades_per_signal": 1
-        },
-        "trendline_price_action": {
-          "enabled": true,
-          "timeframe": "H1",
-          "recommended_timeframes": [
-            "H1",
-            "H4",
-            "D1"
-          ],
-          "trades_per_signal": 1
-        },
-        "smc_liquidity_sweep": {
-          "enabled": true,
-          "timeframe": "M15",
-          "recommended_timeframes": [
-            "M15",
-            "M30",
-            "H1"
-          ],
-          "trades_per_signal": 1
-        },
-        "high_impact_news": {
-          "enabled": true,
-          "timeframe": "M1",
-          "recommended_timeframes": [
-            "M1",
-            "M5"
-          ],
-          "trades_per_signal": 1
-        }
-      }
+      ]
     },
     "deriv": {
       "enabled": true,
@@ -132,7 +91,8 @@
           "method": "simple",
           "trades_per_signal": 10,
           "max_positions_per_symbol": 25,
-          "use_take_profit": false
+          "use_take_profit": false,
+          "trade_mode": "both"
         }
       }
     }

@@ -25,6 +25,7 @@ DEFAULT_BROKER_STRATEGY_SETTINGS = {
             "method": "simple",
             "trades_per_signal": 5,
             "max_positions_per_symbol": 25,
+            "trade_mode": "normal",
             "use_take_profit": False
         }
     }

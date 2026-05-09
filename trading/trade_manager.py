@@ -2043,13 +2043,13 @@ def _get_deriv_m1_exit_position_type(symbol):
         "CRASH1000",
         "CRASH1000INDEX"
     ):
-        return "BUY", "SELL"
+        return "BUY", "BUY"
 
     if symbol_key in (
         "BOOM1000",
         "BOOM1000INDEX"
     ):
-        return "SELL", "BUY"
+        return "SELL", "SELL"
 
     return None, None
 

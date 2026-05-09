@@ -1,5 +1,12 @@
 # BurrFx Website
 
+<p>
+  <img src="../assets/brand/burrfx-desktop-wordmark-1024.png" alt="BurrFx desktop wordmark icon" width="72">
+  <img src="../assets/brand/burrfx-mobile-fx-1024.png" alt="BurrFx mobile fx icon" width="72">
+</p>
+
+Icon catalog: run the website and open `/icons`, or review `app/icons/page.tsx`.
+
 This is the Next.js landing page for BurrFx, a self-hosted MetaTrader 5 trading bot control system. The page markets the bot with bold launch copy, SEO metadata, social preview images, and Remotion-rendered product media.
 
 The main positioning is built around four concrete ideas:

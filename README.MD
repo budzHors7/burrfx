@@ -1,4 +1,9 @@
-# BurrFx
+<p>
+  <img src="assets/brand/burrfx-desktop-wordmark-1024.png" alt="BurrFx desktop wordmark icon" width="72">
+  <img src="assets/brand/burrfx-mobile-fx-1024.png" alt="BurrFx mobile fx icon" width="72">
+</p>
+
+Icon catalog: run the website and open `/icons`, or review `website/app/icons/page.tsx`.
 
 BurrFx is a MetaTrader 5 trading project with three connected parts:
 

@@ -868,6 +868,95 @@ class DesktopBridgeTests(unittest.TestCase):
         self.assertEqual(strategy["trades_per_signal"], 25)
         self.assertEqual(strategy["max_positions_per_symbol"], 25)
 
+    def test_save_settings_updates_deriv_trade_mode(self):
+        existing_settings = {
+            "brokers": {
+                "deriv": {
+                    "enabled": True,
+                    "label": "Deriv",
+                    "strategy_settings": {
+                        "stochastic_oscillator": {
+                            "enabled": True,
+                            "trade_mode": "normal",
+                        }
+                    },
+                }
+            }
+        }
+        saved_broker_settings = []
+
+        with (
+            patch.object(
+                desktop_bridge.broker_settings,
+                "load_broker_settings",
+                return_value=json.loads(json.dumps(existing_settings)),
+            ),
+            patch.object(
+                desktop_bridge.broker_settings,
+                "save_broker_settings",
+                side_effect=lambda settings: saved_broker_settings.append(
+                    json.loads(json.dumps(settings))
+                ),
+            ),
+            patch.object(
+                desktop_bridge,
+                "build_settings",
+                return_value={"saved": True},
+            ),
+        ):
+            desktop_bridge.save_settings(
+                {
+                    "broker_strategies": {
+                        "deriv": {
+                            "stochastic_oscillator": {
+                                "enabled": True,
+                                "trade_mode": "both",
+                            }
+                        }
+                    }
+                }
+            )
+
+        strategy = (
+            saved_broker_settings[0]["brokers"]["deriv"][
+                "strategy_settings"
+            ]["stochastic_oscillator"]
+        )
+        self.assertEqual(strategy["trade_mode"], "both")
+
+    def test_save_settings_rejects_unknown_deriv_trade_mode(self):
+        with (
+            patch.object(
+                desktop_bridge.broker_settings,
+                "load_broker_settings",
+                return_value={
+                    "brokers": {
+                        "deriv": {
+                            "enabled": True,
+                            "label": "Deriv",
+                            "strategy_settings": {
+                                "stochastic_oscillator": {
+                                    "enabled": True,
+                                }
+                            },
+                        }
+                    }
+                },
+            ),
+        ):
+            with self.assertRaisesRegex(ValueError, "trade mode"):
+                desktop_bridge.save_settings(
+                    {
+                        "broker_strategies": {
+                            "deriv": {
+                                "stochastic_oscillator": {
+                                    "trade_mode": "reverse",
+                                }
+                            }
+                        }
+                    }
+                )
+
     def test_save_settings_rejects_disabling_all_global_strategies(self):
         with patch.object(
             desktop_bridge.strategy_settings,

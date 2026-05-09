@@ -282,6 +282,19 @@ h3 {
   width: 20px;
 }
 
+.icon-button .settings-gear-icon {
+  fill: none;
+  height: 21px;
+  stroke: currentColor;
+  width: 21px;
+}
+
+.icon-button .settings-gear-icon path,
+.icon-button .settings-gear-icon circle {
+  fill: none;
+  stroke: currentColor;
+}
+
 .notice {
   border-radius: 8px;
   margin: 0 auto 16px;
@@ -432,8 +445,9 @@ h3 {
   padding: 12px;
 }
 
-.option-row input,
-.broker-settings-row input {
+.option-row input[type="checkbox"],
+.option-row input[type="radio"],
+.broker-settings-row > input[type="checkbox"] {
   height: 18px;
   margin: 3px 0 0;
   width: 18px;
@@ -613,13 +627,18 @@ h3 {
   grid-template-columns: minmax(0, 1fr) minmax(86px, 112px);
 }
 
+.broker-strategy-row.with-mode {
+  grid-template-columns: minmax(0, 1fr) minmax(86px, 112px) minmax(132px, 176px);
+}
+
 .broker-strategy-option input {
   height: 16px;
   margin: 3px 0 0;
   width: 16px;
 }
 
-.broker-strategy-count {
+.broker-strategy-count,
+.broker-strategy-mode {
   color: var(--color-muted);
   display: grid;
   font-size: 0.72rem;
@@ -628,14 +647,29 @@ h3 {
   text-transform: uppercase;
 }
 
-.broker-strategy-count input {
-  background: var(--color-surface-soft);
-  border: 1px solid var(--color-border);
+.broker-strategy-count input,
+.broker-strategy-mode select {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
-  color: var(--color-text);
+  color: var(--color-heading);
   font: inherit;
+  font-weight: 780;
   height: 34px;
+  min-width: 0;
   padding: 0 8px;
+  width: 100%;
+}
+
+.broker-strategy-count input {
+  font-size: 0.95rem;
+  text-align: center;
+}
+
+.compact-select {
+  min-height: 34px;
+  min-width: 0;
+  width: 100%;
 }
 
 .validation-list {
@@ -1248,6 +1282,10 @@ h3 {
   }
 
   .broker-strategy-row {
+    grid-template-columns: 1fr;
+  }
+
+  .broker-strategy-row.with-mode {
     grid-template-columns: 1fr;
   }
 

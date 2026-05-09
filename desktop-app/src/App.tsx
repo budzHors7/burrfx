@@ -13,6 +13,7 @@ import {
   BotStrategySummary,
   DesktopCommand,
   DesktopStatus,
+  DerivTradeMode,
   ManagedRuntime,
   RuntimeLog,
   TradeJournalResponse,
@@ -997,6 +998,7 @@ type SettingsDraft = {
 type BrokerStrategyDraft = {
   enabled: boolean;
   tradeCount: string;
+  tradeMode?: DerivTradeMode;
 };
 
 type BrokerDailyLimitsDraft = {
@@ -1203,6 +1205,7 @@ function SettingsModal({
                   ...(current.brokerStrategies[brokerId]?.[strategyId] ?? {
                     enabled: false,
                     tradeCount: "1",
+                    tradeMode: "normal",
                   }),
                   ...updates,
                 },
@@ -1820,7 +1823,14 @@ function BrokerStrategyOptions({
     >
       <p className="settings-subheading">Allowed strategies</p>
       {broker.allowed_strategies.map((strategy) => (
-        <div className="broker-strategy-row" key={strategy.id}>
+        <div
+          className={
+            isDerivStochasticStrategy(broker, strategy)
+              ? "broker-strategy-row with-mode"
+              : "broker-strategy-row"
+          }
+          key={strategy.id}
+        >
           <label className="broker-strategy-option">
             <input
               checked={
@@ -1862,10 +1872,59 @@ function BrokerStrategyOptions({
             />
             <small>Max {strategy.max_positions_per_symbol}</small>
           </label>
+          {isDerivStochasticStrategy(broker, strategy) && (
+            <label className="broker-strategy-mode">
+              <span>Mode</span>
+              <select
+                className="select-control compact-select"
+                disabled={disabled}
+                onChange={(event) =>
+                  onStrategyChange(strategy.id, {
+                    tradeMode: event.target.value as DerivTradeMode,
+                  })
+                }
+                value={
+                  brokerStrategies[strategy.id]?.tradeMode
+                  ?? normalizeDerivTradeMode(strategy.trade_mode)
+                }
+              >
+                <option value="normal">Normal</option>
+                <option value="spike">Spike</option>
+                <option value="both">Both</option>
+              </select>
+              <small>
+                {formatDerivTradeModeSummary(
+                  brokerStrategies[strategy.id]?.tradeMode
+                  ?? normalizeDerivTradeMode(strategy.trade_mode),
+                )}
+              </small>
+            </label>
+          )}
         </div>
       ))}
     </div>
   );
+}
+
+function isDerivStochasticStrategy(
+  broker: BrokerSummary,
+  strategy: BotStrategySummary,
+): boolean {
+  return broker.id === "deriv" && strategy.id === "stochastic_oscillator";
+}
+
+function normalizeDerivTradeMode(
+  value: DerivTradeMode | undefined,
+): DerivTradeMode {
+  return value === "spike" || value === "both" ? value : "normal";
+}
+
+function formatDerivTradeModeSummary(mode: DerivTradeMode): string {
+  if (mode === "both") {
+    return "Crash BUY/SELL, Boom BUY/SELL";
+  }
+
+  return mode === "spike" ? "Crash SELL, Boom BUY" : "Crash BUY, Boom SELL";
 }
 
 function ValidationList({ broker }: { broker: BrokerSummary }) {
@@ -1927,6 +1986,7 @@ function createSettingsDraft(settings: BotSettings): SettingsDraft {
             {
               enabled: strategy.enabled,
               tradeCount: String(strategy.trades_per_signal),
+              tradeMode: strategy.trade_mode,
             },
           ]),
         ),
@@ -2025,6 +2085,9 @@ function buildBrokerStrategiesPayload(
             {
               enabled: strategy.enabled,
               trades_per_signal: Math.floor(tradeCount),
+              ...(strategy.tradeMode
+                ? { trade_mode: strategy.tradeMode }
+                : {}),
             },
           ];
         }),
@@ -2140,9 +2203,18 @@ function formatProfileMeta(profile: BotSettings["trading"]["profiles"][number]) 
 
 function GearIcon() {
   return (
-    <svg aria-hidden="true" viewBox="0 0 24 24">
-      <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" />
-      <path d="M19.4 13.5a7.8 7.8 0 0 0 0-3l2-1.5-2-3.5-2.4 1a7.8 7.8 0 0 0-2.6-1.5L14 2.4h-4l-.4 2.6A7.8 7.8 0 0 0 7 6.5l-2.4-1-2 3.5 2 1.5a7.8 7.8 0 0 0 0 3l-2 1.5 2 3.5 2.4-1a7.8 7.8 0 0 0 2.6 1.5l.4 2.6h4l.4-2.6a7.8 7.8 0 0 0 2.6-1.5l2.4 1 2-3.5-2-1.5Z" />
+    <svg
+      aria-hidden="true"
+      className="settings-gear-icon"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <path d="M12.2 2h-.4a2 2 0 0 0-2 1.7l-.2 1.5a7.8 7.8 0 0 0-1.4.8L6.8 5.4a2 2 0 0 0-2.6.7L4 6.4a2 2 0 0 0 .4 2.7l1.2.9a7.6 7.6 0 0 0 0 1.9l-1.2.9A2 2 0 0 0 4 15.6l.2.3a2 2 0 0 0 2.6.7l1.4-.6a7.8 7.8 0 0 0 1.4.8l.2 1.5a2 2 0 0 0 2 1.7h.4a2 2 0 0 0 2-1.7l.2-1.5a7.8 7.8 0 0 0 1.4-.8l1.4.6a2 2 0 0 0 2.6-.7l.2-.3a2 2 0 0 0-.4-2.7l-1.2-.9a7.6 7.6 0 0 0 0-1.9l1.2-.9A2 2 0 0 0 20 6.4l-.2-.3a2 2 0 0 0-2.6-.7l-1.4.6a7.8 7.8 0 0 0-1.4-.8l-.2-1.5a2 2 0 0 0-2-1.7Z" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   );
 }

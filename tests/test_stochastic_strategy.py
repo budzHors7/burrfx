@@ -223,6 +223,72 @@ class StochasticOscillatorSignalTests(unittest.TestCase):
 
         self.assertIsNone(signal)
 
+    def test_deriv_spike_mode_allows_crash_sell_signal(self):
+        broker_runtime.set_active_broker(
+            {
+                "id": "deriv",
+                "label": "Deriv",
+                "strategy_settings": {
+                    "stochastic_oscillator": {
+                        "enabled": True,
+                        "trade_mode": "spike",
+                    }
+                },
+            }
+        )
+
+        signal = self._evaluate(
+            ([100.0] * 22)
+            + [
+                100.0,
+                100.0,
+                30.0,
+            ],
+            symbol="Crash 1000 Index",
+        )
+
+        self.assertIsNotNone(signal)
+        self.assertEqual(signal["signal"], "SELL")
+
+    def test_deriv_both_mode_allows_crash_buy_and_sell_signals(self):
+        broker_runtime.set_active_broker(
+            {
+                "id": "deriv",
+                "label": "Deriv",
+                "strategy_settings": {
+                    "stochastic_oscillator": {
+                        "enabled": True,
+                        "trade_mode": "both",
+                    }
+                },
+            }
+        )
+
+        buy_signal = self._evaluate(
+            ([0.0] * 22)
+            + [
+                0.0,
+                0.0,
+                70.0,
+            ],
+            symbol="Crash 1000 Index",
+        )
+        strategy_engine.LAST_EVALUATED_CANDLES.clear()
+        sell_signal = self._evaluate(
+            ([100.0] * 22)
+            + [
+                100.0,
+                100.0,
+                30.0,
+            ],
+            symbol="Crash 1000 Index",
+        )
+
+        self.assertIsNotNone(buy_signal)
+        self.assertEqual(buy_signal["signal"], "BUY")
+        self.assertIsNotNone(sell_signal)
+        self.assertEqual(sell_signal["signal"], "SELL")
+
     def test_deriv_exit_check_can_read_crash_overbought_sell_cross(self):
         broker_runtime.set_active_broker(
             {
@@ -268,6 +334,72 @@ class StochasticOscillatorSignalTests(unittest.TestCase):
         )
 
         self.assertIsNone(signal)
+
+    def test_deriv_spike_mode_allows_boom_buy_signal(self):
+        broker_runtime.set_active_broker(
+            {
+                "id": "deriv",
+                "label": "Deriv",
+                "strategy_settings": {
+                    "stochastic_oscillator": {
+                        "enabled": True,
+                        "trade_mode": "spike",
+                    }
+                },
+            }
+        )
+
+        signal = self._evaluate(
+            ([0.0] * 22)
+            + [
+                0.0,
+                0.0,
+                70.0,
+            ],
+            symbol="Boom 1000 Index",
+        )
+
+        self.assertIsNotNone(signal)
+        self.assertEqual(signal["signal"], "BUY")
+
+    def test_deriv_both_mode_allows_boom_buy_and_sell_signals(self):
+        broker_runtime.set_active_broker(
+            {
+                "id": "deriv",
+                "label": "Deriv",
+                "strategy_settings": {
+                    "stochastic_oscillator": {
+                        "enabled": True,
+                        "trade_mode": "both",
+                    }
+                },
+            }
+        )
+
+        sell_signal = self._evaluate(
+            ([100.0] * 22)
+            + [
+                100.0,
+                100.0,
+                30.0,
+            ],
+            symbol="Boom 1000 Index",
+        )
+        strategy_engine.LAST_EVALUATED_CANDLES.clear()
+        buy_signal = self._evaluate(
+            ([0.0] * 22)
+            + [
+                0.0,
+                0.0,
+                70.0,
+            ],
+            symbol="Boom 1000 Index",
+        )
+
+        self.assertIsNotNone(sell_signal)
+        self.assertEqual(sell_signal["signal"], "SELL")
+        self.assertIsNotNone(buy_signal)
+        self.assertEqual(buy_signal["signal"], "BUY")
 
     def test_default_stochastic_levels_are_25_and_75(self):
         signal = strategy_engine.evaluate_strategy_signal(

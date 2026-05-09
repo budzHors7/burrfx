@@ -1,5 +1,11 @@
 # BurrFx Desktop
 
+<p>
+  <img src="../assets/brand/burrfx-desktop-wordmark-1024.png" alt="BurrFx desktop wordmark icon" width="72">
+</p>
+
+Icon catalog: run the website and open `/icons`, or review `../website/app/icons/page.tsx`.
+
 Tauri + React desktop controller for the BurrFx local runtime.
 
 The app supervises two local process groups from the repository root:

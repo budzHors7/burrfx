@@ -659,7 +659,7 @@ def _build_strategy_summary(
         strategy
     )
 
-    return {
+    summary = {
         "id": strategy_id,
         "label": _format_strategy_name(strategy_id),
         "enabled": bool(
@@ -688,6 +688,16 @@ def _build_strategy_summary(
             strategy
         )
     }
+
+    if (
+        strategy_id == "stochastic_oscillator"
+        and "trade_mode" in strategy
+    ):
+        summary["trade_mode"] = _normalize_deriv_trade_mode(
+            strategy.get("trade_mode")
+        )
+
+    return summary
 
 
 def _build_strategy_catalog():
@@ -1192,6 +1202,8 @@ def _apply_broker_strategy_updates(
         if strategy_id in strategy_updates:
             strategy.update(
                 _normalize_broker_strategy_update(
+                    broker_id,
+                    strategy_id,
                     strategy_updates[strategy_id],
                     strategy
                 )
@@ -1202,7 +1214,12 @@ def _apply_broker_strategy_updates(
     broker["strategy_settings"] = next_settings
 
 
-def _normalize_broker_strategy_update(update, strategy):
+def _normalize_broker_strategy_update(
+    broker_id,
+    strategy_id,
+    update,
+    strategy
+):
 
     if isinstance(update, bool):
         return {
@@ -1234,6 +1251,20 @@ def _normalize_broker_strategy_update(update, strategy):
                     strategy
                 )
             )
+        )
+
+    if "trade_mode" in update:
+        if (
+            broker_id != "deriv"
+            or strategy_id != "stochastic_oscillator"
+        ):
+            raise ValueError(
+                "Deriv trade mode is only available for "
+                "the Deriv stochastic strategy."
+            )
+
+        normalized["trade_mode"] = _normalize_deriv_trade_mode(
+            update["trade_mode"]
         )
 
     return normalized
@@ -1365,6 +1396,18 @@ def _normalize_strategy_int(
             int(maximum)
         )
     )
+
+
+def _normalize_deriv_trade_mode(value):
+
+    mode = str(value or "normal").strip().lower()
+
+    if mode not in ("normal", "spike", "both"):
+        raise ValueError(
+            "Deriv trade mode must be normal, spike, or both."
+        )
+
+    return mode
 
 
 def _format_strategy_name(strategy_id):

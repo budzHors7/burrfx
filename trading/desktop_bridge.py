@@ -659,7 +659,7 @@ def _build_strategy_summary(
         strategy
     )
 
-    return {
+    summary = {
         "id": strategy_id,
         "label": _format_strategy_name(strategy_id),
         "enabled": bool(
@@ -677,8 +677,27 @@ def _build_strategy_summary(
                 "recommended_timeframes",
                 []
             )
+        ),
+        "trades_per_signal": _normalize_strategy_int(
+            strategy.get("trades_per_signal"),
+            default=1,
+            minimum=1,
+            maximum=_strategy_max_positions_per_symbol(strategy)
+        ),
+        "max_positions_per_symbol": _strategy_max_positions_per_symbol(
+            strategy
         )
     }
+
+    if (
+        strategy_id == "stochastic_oscillator"
+        and "trade_mode" in strategy
+    ):
+        summary["trade_mode"] = _normalize_deriv_trade_mode(
+            strategy.get("trade_mode")
+        )
+
+    return summary
 
 
 def _build_strategy_catalog():
@@ -1181,13 +1200,74 @@ def _apply_broker_strategy_updates(
             strategy.update(existing_strategy)
 
         if strategy_id in strategy_updates:
-            strategy["enabled"] = bool(
-                strategy_updates[strategy_id]
+            strategy.update(
+                _normalize_broker_strategy_update(
+                    broker_id,
+                    strategy_id,
+                    strategy_updates[strategy_id],
+                    strategy
+                )
             )
 
         next_settings[strategy_id] = strategy
 
     broker["strategy_settings"] = next_settings
+
+
+def _normalize_broker_strategy_update(
+    broker_id,
+    strategy_id,
+    update,
+    strategy
+):
+
+    if isinstance(update, bool):
+        return {
+            "enabled": update
+        }
+
+    if not isinstance(update, dict):
+        raise ValueError(
+            "Broker strategy updates must be booleans or objects."
+        )
+
+    normalized = {}
+
+    if "enabled" in update:
+        normalized["enabled"] = bool(
+            update["enabled"]
+        )
+
+    if "trades_per_signal" in update:
+        normalized["trades_per_signal"] = (
+            _normalize_strategy_int(
+                update["trades_per_signal"],
+                default=strategy.get(
+                    "trades_per_signal",
+                    1
+                ),
+                minimum=1,
+                maximum=_strategy_max_positions_per_symbol(
+                    strategy
+                )
+            )
+        )
+
+    if "trade_mode" in update:
+        if (
+            broker_id != "deriv"
+            or strategy_id != "stochastic_oscillator"
+        ):
+            raise ValueError(
+                "Deriv trade mode is only available for "
+                "the Deriv stochastic strategy."
+            )
+
+        normalized["trade_mode"] = _normalize_deriv_trade_mode(
+            update["trade_mode"]
+        )
+
+    return normalized
 
 
 def _get_allowed_broker_strategy_settings(broker):
@@ -1285,6 +1365,49 @@ def _get_strategy_defaults(
             return broker_defaults[strategy_id]
 
     return fallback or {}
+
+
+def _strategy_max_positions_per_symbol(strategy):
+
+    return _normalize_strategy_int(
+        strategy.get("max_positions_per_symbol"),
+        default=5,
+        minimum=1,
+        maximum=25
+    )
+
+
+def _normalize_strategy_int(
+    value,
+    default,
+    minimum,
+    maximum
+):
+
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        normalized = int(default)
+
+    return max(
+        int(minimum),
+        min(
+            normalized,
+            int(maximum)
+        )
+    )
+
+
+def _normalize_deriv_trade_mode(value):
+
+    mode = str(value or "normal").strip().lower()
+
+    if mode not in ("normal", "spike", "both"):
+        raise ValueError(
+            "Deriv trade mode must be normal, spike, or both."
+        )
+
+    return mode
 
 
 def _format_strategy_name(strategy_id):

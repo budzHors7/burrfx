@@ -1,11 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::AppHandle;
+use tauri_plugin_shell::ShellExt;
 
 const MAX_LOG_LINES: usize = 180;
 
@@ -24,6 +27,8 @@ pub struct StrategyOption {
     pub default_enabled: bool,
     pub timeframe: String,
     pub recommended_timeframes: Vec<String>,
+    pub trades_per_signal: u32,
+    pub max_positions_per_symbol: u32,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -139,6 +144,8 @@ pub struct ManagedProcessStatus {
 #[derive(Debug, Serialize, Clone)]
 pub struct DesktopStatus {
     pub project_root: String,
+    pub runtime_root: String,
+    pub packaged_runtime: bool,
     pub generated_at: String,
     pub bridge_error: Option<String>,
     pub server_settings: Option<BridgeServer>,
@@ -352,14 +359,22 @@ impl ProcessGroup {
 
 pub struct RuntimeSupervisor {
     project_root: PathBuf,
+    runtime_root: PathBuf,
+    app_handle: Option<AppHandle>,
     server: ProcessGroup,
     trading: ProcessGroup,
 }
 
 impl RuntimeSupervisor {
-    pub fn new(project_root: PathBuf) -> Self {
+    pub fn new(
+        project_root: PathBuf,
+        runtime_root: PathBuf,
+        app_handle: Option<AppHandle>,
+    ) -> Self {
         Self {
             project_root,
+            runtime_root,
+            app_handle,
             server: ProcessGroup::new("Mobile API server", "stopped", "running"),
             trading: ProcessGroup::new("Local trading", "stopped", "running"),
         }
@@ -418,10 +433,8 @@ impl RuntimeSupervisor {
             });
         }
 
-        let mut command = self.python_command();
-        command.arg("server/run_desktop.py");
-        command.current_dir(&self.project_root);
-        command.env("PYTHONUNBUFFERED", "1");
+        let mut command = self.runtime_command();
+        command.arg("server");
 
         self.server
             .spawn("Mobile API server".to_string(), command)?;
@@ -474,14 +487,8 @@ impl RuntimeSupervisor {
         }
 
         for broker in enabled_brokers {
-            let mut command = self.python_command();
-            command
-                .arg("-m")
-                .arg("trading.broker_worker")
-                .arg("--broker")
-                .arg(&broker.id);
-            command.current_dir(&self.project_root);
-            command.env("PYTHONUNBUFFERED", "1");
+            let mut command = self.runtime_command();
+            command.arg("worker").arg("--broker").arg(&broker.id);
 
             if let Err(error) = self
                 .trading
@@ -530,6 +537,8 @@ impl RuntimeSupervisor {
 
         DesktopStatus {
             project_root: self.project_root.to_string_lossy().to_string(),
+            runtime_root: self.runtime_root.to_string_lossy().to_string(),
+            packaged_runtime: self.packaged_runtime_available(),
             generated_at: now_stamp(),
             bridge_error,
             server_settings,
@@ -541,9 +550,8 @@ impl RuntimeSupervisor {
 
     fn load_bridge_status(&self) -> Result<BridgeStatus, String> {
         let output = self
-            .python_command()
-            .args(["-m", "trading.desktop_bridge", "status"])
-            .current_dir(&self.project_root)
+            .runtime_command()
+            .args(["bridge", "status"])
             .output()
             .map_err(|error| format!("Failed to run desktop bridge: {error}"))?;
 
@@ -562,9 +570,8 @@ impl RuntimeSupervisor {
 
     fn load_bot_settings(&self) -> Result<BotSettings, String> {
         let output = self
-            .python_command()
-            .args(["-m", "trading.desktop_bridge", "settings"])
-            .current_dir(&self.project_root)
+            .runtime_command()
+            .args(["bridge", "settings"])
             .output()
             .map_err(|error| format!("Failed to run desktop bridge: {error}"))?;
 
@@ -583,9 +590,8 @@ impl RuntimeSupervisor {
 
     fn load_app_logs(&self) -> Result<DesktopLogsResponse, String> {
         let output = self
-            .python_command()
-            .args(["-m", "trading.desktop_bridge", "logs"])
-            .current_dir(&self.project_root)
+            .runtime_command()
+            .args(["bridge", "logs"])
             .output()
             .map_err(|error| format!("Failed to run desktop bridge: {error}"))?;
 
@@ -610,8 +616,7 @@ impl RuntimeSupervisor {
     ) -> Result<serde_json::Value, String> {
         let mut command = self.python_command();
         command
-            .args(["-m", "trading.desktop_bridge", command_name])
-            .current_dir(&self.project_root)
+            .args(["bridge", command_name])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
@@ -658,8 +663,7 @@ impl RuntimeSupervisor {
     ) -> Result<BridgeSettingsSaveResponse, String> {
         let mut command = self.python_command();
         command
-            .args(["-m", "trading.desktop_bridge", "save-settings"])
-            .current_dir(&self.project_root)
+            .args(["bridge", "save-settings"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -696,7 +700,38 @@ impl RuntimeSupervisor {
     }
 
     fn python_command(&self) -> Command {
-        Command::new(python_executable(&self.project_root))
+        self.runtime_command()
+    }
+
+    fn runtime_command(&self) -> Command {
+        let mut command = self.sidecar_command().unwrap_or_else(|| {
+            let mut fallback = Command::new(python_executable(&self.project_root));
+            fallback.arg(self.project_root.join("burrfx_runtime.py"));
+            fallback
+        });
+
+        command.current_dir(&self.runtime_root);
+        command.env("BURRFX_RUNTIME_ROOT", &self.runtime_root);
+        command.env(
+            "BURRFX_SERVER_ENV_FILE",
+            self.runtime_root.join("server").join(".env"),
+        );
+        command.env("PYTHONUNBUFFERED", "1");
+        command
+    }
+
+    fn sidecar_command(&self) -> Option<Command> {
+        let app_handle = self.app_handle.as_ref()?;
+        let shell_command = app_handle.shell().sidecar("burrfx-runtime").ok()?;
+
+        Some(shell_command.into())
+    }
+
+    fn packaged_runtime_available(&self) -> bool {
+        self.app_handle
+            .as_ref()
+            .and_then(|app_handle| app_handle.shell().sidecar("burrfx-runtime").ok())
+            .is_some()
     }
 }
 
@@ -719,6 +754,76 @@ fn python_executable(project_root: &Path) -> PathBuf {
     }
 
     PathBuf::from("python")
+}
+
+pub fn prepare_runtime_root(project_root: &Path, runtime_root: &Path) -> Result<(), String> {
+    fs::create_dir_all(runtime_root.join("logs").join("debug"))
+        .map_err(|error| format!("Failed to create debug log folder: {error}"))?;
+    fs::create_dir_all(runtime_root.join("logs").join("symbol_logs"))
+        .map_err(|error| format!("Failed to create symbol log folder: {error}"))?;
+    fs::create_dir_all(runtime_root.join("data"))
+        .map_err(|error| format!("Failed to create data folder: {error}"))?;
+    fs::create_dir_all(runtime_root.join("results"))
+        .map_err(|error| format!("Failed to create results folder: {error}"))?;
+    fs::create_dir_all(runtime_root.join("server"))
+        .map_err(|error| format!("Failed to create server settings folder: {error}"))?;
+
+    ensure_trade_journal(runtime_root)?;
+    seed_file(
+        &project_root.join("broker_settings.json"),
+        &runtime_root.join("broker_settings.json"),
+        None,
+    )?;
+    seed_file(
+        &project_root.join("strategy_settings.json"),
+        &runtime_root.join("strategy_settings.json"),
+        Some("{}\n"),
+    )?;
+    seed_file(
+        &project_root.join("trading_settings.json"),
+        &runtime_root.join("trading_settings.json"),
+        Some("{}\n"),
+    )?;
+    seed_file(
+        &project_root.join("server").join(".env.example"),
+        &runtime_root.join("server").join(".env"),
+        None,
+    )?;
+
+    Ok(())
+}
+
+fn ensure_trade_journal(runtime_root: &Path) -> Result<(), String> {
+    let journal = runtime_root.join("logs").join("trade_journal.csv");
+
+    if journal.exists() {
+        return Ok(());
+    }
+
+    fs::write(journal, "Time,Symbol,Type,Lot,Entry,SL,TP,Ticket,Status\n")
+        .map_err(|error| format!("Failed to create trade journal: {error}"))
+}
+
+fn seed_file(source: &Path, destination: &Path, fallback: Option<&str>) -> Result<(), String> {
+    if destination.exists() {
+        return Ok(());
+    }
+
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Failed to create seed folder: {error}"))?;
+    }
+
+    if source.exists() {
+        fs::copy(source, destination)
+            .map(|_| ())
+            .map_err(|error| format!("Failed to seed {}: {error}", destination.display()))
+    } else if let Some(fallback) = fallback {
+        fs::write(destination, fallback)
+            .map_err(|error| format!("Failed to seed {}: {error}", destination.display()))
+    } else {
+        Ok(())
+    }
 }
 
 fn spawn_log_reader<R>(
@@ -786,5 +891,42 @@ mod tests {
             project_root_from_manifest(manifest),
             PathBuf::from(r"C:\repo")
         );
+    }
+
+    #[test]
+    fn prepare_runtime_root_creates_runtime_dirs_and_seed_files() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+            .to_string();
+        let temp = std::env::temp_dir().join(format!("burrfx-runtime-test-{unique}"));
+        let project_root = temp.join("project");
+        let runtime_root = temp.join("runtime");
+
+        std::fs::create_dir_all(project_root.join("server")).unwrap();
+        std::fs::write(project_root.join("broker_settings.json"), "{}").unwrap();
+        std::fs::write(project_root.join("strategy_settings.json"), "{}").unwrap();
+        std::fs::write(project_root.join("trading_settings.json"), "{}").unwrap();
+        std::fs::write(
+            project_root.join("server").join(".env.example"),
+            "BURRFX_API_PORT=8000",
+        )
+        .unwrap();
+
+        prepare_runtime_root(&project_root, &runtime_root).unwrap();
+
+        assert!(runtime_root.join("logs").join("debug").is_dir());
+        assert!(runtime_root.join("logs").join("symbol_logs").is_dir());
+        assert!(runtime_root.join("data").is_dir());
+        assert!(runtime_root.join("results").is_dir());
+        assert!(runtime_root.join("broker_settings.json").is_file());
+        assert!(runtime_root.join("server").join(".env").is_file());
+        assert_eq!(
+            std::fs::read_to_string(runtime_root.join("logs").join("trade_journal.csv")).unwrap(),
+            "Time,Symbol,Type,Lot,Entry,SL,TP,Ticket,Status\n"
+        );
+
+        std::fs::remove_dir_all(temp).unwrap();
     }
 }

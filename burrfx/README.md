@@ -1,5 +1,11 @@
 # BurrFx Mobile App
 
+<p>
+  <img src="../assets/brand/burrfx-mobile-fx-1024.png" alt="BurrFx mobile fx icon" width="72">
+</p>
+
+Icon catalog: run the website and open `/icons`, or review `../website/app/icons/page.tsx`.
+
 This is the Expo mobile client for BurrFx. It connects to the self-hosted BurrFx API, which then logs into MetaTrader 5 on the Windows machine.
 
 The app currently supports:

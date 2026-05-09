@@ -7,6 +7,7 @@ from config import (
     MAX_SPREAD_POINTS,
     RISK_PERCENT,
     SL_ATR_MULTIPLIER,
+    TRADING_SETTINGS_FILE,
     TP1_LOCK_ATR_BUFFER,
     TP_EXTENSION_TRIGGER_RATIO,
     TRAIL_FACTOR
@@ -16,15 +17,7 @@ from trading.debug_logger import log_event
 from utils import clear_screen, pause
 
 
-PROJECT_ROOT = os.path.dirname(
-    os.path.dirname(
-        os.path.abspath(__file__)
-    )
-)
-SETTINGS_FILE = os.path.join(
-    PROJECT_ROOT,
-    "trading_settings.json"
-)
+SETTINGS_FILE = TRADING_SETTINGS_FILE
 DEFAULT_PROFILE_ID = "regular_risk"
 PROFILE_ORDER = [
     "smart_risk",
@@ -437,6 +430,11 @@ def _save_profile_selection(
     payload = {
         "active_profile": profile_id
     }
+
+    os.makedirs(
+        os.path.dirname(SETTINGS_FILE),
+        exist_ok=True
+    )
 
     with open(
         SETTINGS_FILE,

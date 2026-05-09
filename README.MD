@@ -1,4 +1,9 @@
-# BurrFx
+<p>
+  <img src="assets/brand/burrfx-desktop-wordmark-1024.png" alt="BurrFx desktop wordmark icon" width="72">
+  <img src="assets/brand/burrfx-mobile-fx-1024.png" alt="BurrFx mobile fx icon" width="72">
+</p>
+
+Icon catalog: run the website and open `/icons`, or review `website/app/icons/page.tsx`.
 
 BurrFx is a MetaTrader 5 trading project with three connected parts:
 
@@ -68,6 +73,18 @@ cd desktop-app
 bun install
 bun run tauri dev
 ```
+
+Packaged desktop build:
+
+```powershell
+cd desktop-app
+bun run build:desktop
+```
+
+The packaged build creates a PyInstaller `burrfx-runtime.exe` sidecar and
+bundles it with Tauri so installed users do not need Python or the repo checkout.
+Mutable settings, journals, logs, data, and results are created in the user's app
+data folder on first launch.
 
 Useful checks:
 

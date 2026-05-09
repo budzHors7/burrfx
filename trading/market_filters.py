@@ -142,6 +142,9 @@ def _get_effective_max_spread_points(settings):
 
 def is_market_open(verbose=True):
 
+    if _active_broker_is_deriv():
+        return True
+
     now = datetime.now()
 
     if now.weekday() >= 5:
@@ -165,6 +168,14 @@ def is_market_open(verbose=True):
 # =========================
 
 def is_within_sessions(verbose=True):
+
+    if _active_broker_is_deriv():
+        if verbose:
+            log_event(
+                "session_filter_bypassed",
+                reason="deriv_synthetic_indices_24_7"
+            )
+        return True
 
     if not is_market_open(verbose=verbose):
         return False
@@ -260,6 +271,9 @@ def _resolve_symbol(symbol, available_symbols):
 
 def get_active_session_name():
 
+    if _active_broker_is_deriv():
+        return "all"
+
     if not is_market_open(verbose=False):
         return None
 
@@ -280,6 +294,16 @@ def get_active_session_name():
         return "london"
 
     return None
+
+
+def _active_broker_is_deriv():
+
+    broker = get_active_broker()
+
+    return (
+        broker is not None
+        and broker.get("id") == "deriv"
+    )
 
 
 def get_active_session_label():

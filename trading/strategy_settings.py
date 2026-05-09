@@ -1,21 +1,13 @@
 import json
 import os
 
-from config import STRATEGY_SETTINGS
+from config import STRATEGY_SETTINGS, STRATEGY_SETTINGS_FILE
 from logo import show_logo
 from trading.debug_logger import log_event
 from utils import clear_screen, pause
 
 
-PROJECT_ROOT = os.path.dirname(
-    os.path.dirname(
-        os.path.abspath(__file__)
-    )
-)
-SETTINGS_FILE = os.path.join(
-    PROJECT_ROOT,
-    "strategy_settings.json"
-)
+SETTINGS_FILE = STRATEGY_SETTINGS_FILE
 DEFAULT_BROKER_STRATEGY_SETTINGS = {
     "deriv": {
         "stochastic_oscillator": {
@@ -33,6 +25,7 @@ DEFAULT_BROKER_STRATEGY_SETTINGS = {
             "method": "simple",
             "trades_per_signal": 5,
             "max_positions_per_symbol": 25,
+            "trade_mode": "normal",
             "use_take_profit": False
         }
     }
@@ -325,6 +318,11 @@ def _save_overrides(settings):
         if os.path.exists(SETTINGS_FILE):
             os.remove(SETTINGS_FILE)
     else:
+        os.makedirs(
+            os.path.dirname(SETTINGS_FILE),
+            exist_ok=True
+        )
+
         with open(
             SETTINGS_FILE,
             "w",

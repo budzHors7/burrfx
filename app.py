@@ -6,6 +6,7 @@ from backtesting.backtester import backtest_menu
 from trading.broker_launcher import launch_active_broker_tabs
 from trading.broker_settings import (
     broker_settings_menu,
+    get_broker_display_label,
     get_enabled_brokers
 )
 from trading.debug_logger import init_debug_logger, log_event
@@ -15,6 +16,21 @@ from trading.trading_settings import (
     get_trading_profile_label,
     trading_settings_menu
 )
+
+
+def format_active_broker_labels(active_brokers):
+
+    if not active_brokers:
+        return "[None]"
+
+    labels = ", ".join(
+        str(
+            get_broker_display_label(broker)
+        )
+        for broker in active_brokers
+    )
+
+    return f"[{labels}]"
 
 
 def main_menu():
@@ -29,18 +45,13 @@ def main_menu():
         print("==========\n")
 
         active_brokers = get_enabled_brokers()
-        active_broker_labels = (
-            ", ".join(
-                broker["label"]
-                for broker in active_brokers
-            )
-            if active_brokers
-            else "None"
+        active_broker_labels = format_active_broker_labels(
+            active_brokers
         )
 
         print(
-            "1 - Start Active Brokers "
-            f"[{active_broker_labels}]"
+            "1 - Start Active Brokers: "
+            f"{active_broker_labels}"
         )
         print("2 - Download History Data")
         print("3 - Backtest Strategy")
